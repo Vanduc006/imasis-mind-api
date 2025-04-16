@@ -5,6 +5,7 @@ import { UploadService } from './upload.service';
 @Controller('upload')
 
 export class UploadController {
+    constructor(private readonly UploadService : UploadService) {}
     @Get()
     getUpload(): string {
         return 'Hello, this is the upload endpoint!';
@@ -16,13 +17,27 @@ export class UploadController {
             storage: memoryStorage(),
         }),
     )
-    createUpload(@UploadedFiles() files: Express.Multer.File[]) {
+    async createUpload(@UploadedFiles() files: Express.Multer.File[]) {
         console.log('file')
-        return (
-            
-            files.map((file) => ({
-                filename : file.originalname
-            }))
+        // let data
+        const dataArray = Promise.all(
+            files.map(async(file) => {
+                const extract = await this.UploadService.PrasePDF(file)
+                return ({
+                    numpages : extract.numpages,
+                    infor : extract.info,
+                    text : extract.text,
+                    metadata : extract.metadata,
+                })
+            })
+        )
+        return ( dataArray
+            // data
+            // files.map((file) => ({
+            //     data : this.UploadService.PrasePDF(file)
+            //     // @UploadService.PrasePDF(file)
+            //     // filename : file.originalname
+            // }))
         )
         
     }
