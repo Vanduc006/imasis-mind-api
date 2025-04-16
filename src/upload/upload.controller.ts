@@ -2,10 +2,13 @@ import { Controller, Post, UploadedFiles, UseInterceptors, Get, Body } from '@ne
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage, memoryStorage} from 'multer';
 import { UploadService } from './upload.service';
+import { LlmService } from 'src/llm/llm.service';
+import { console } from 'inspector';
 @Controller('upload')
 
 export class UploadController {
-    constructor(private readonly UploadService : UploadService) {}
+    constructor(private readonly UploadService : UploadService, private readonly LlmService : LlmService) {}
+    
     @Get()
     getUpload(): string {
         return 'Hello, this is the upload endpoint!';
@@ -40,6 +43,15 @@ export class UploadController {
             // }))
         )
         
+    }
+    @Post('embedding')
+    async createEmbedding(@Body('content') content : string ) {
+        console.log('1')
+        const embedding = await this.LlmService.geminiEmbedding(content)
+        return ({
+            originContent : content,
+            embedding : embedding,
+        })
     }
 
 
