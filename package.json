@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",
+    "@aws-sdk/s3-presigned-post": "^3.787.0",
     "@aws-sdk/s3-request-presigner": "^3.787.0",
     "@dotenvx/dotenvx": "^1.40.1",
     "@google/genai": "^0.8.0",
@@ -35,7 +36,7 @@
     "class-validator": "^0.14.1",
     "cloudinary": "^2.6.0",
     "dotenv": "^16.5.0",
-    "openai": "^4.94.0",
+    "openai": "^4.95.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.14.1",
     "reflect-metadata": "^0.2.2",

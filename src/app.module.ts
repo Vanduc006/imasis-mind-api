@@ -7,10 +7,11 @@ import { ParamsModule } from './params/params.module';
 import { TransformfileService } from './transformfile/transformfile.service';
 import { UploadService } from './upload/upload.service';
 import { LlmService } from './llm/llm.service';
+import { LlmController } from './llm/llm.controller';
 
 @Module({
   imports: [ParamsModule],
-  controllers: [AppController, UploadController, ParamsController],
+  controllers: [AppController, UploadController, ParamsController, LlmController],
   providers: [AppService, TransformfileService, UploadService, LlmService],
 })
 export class AppModule {}

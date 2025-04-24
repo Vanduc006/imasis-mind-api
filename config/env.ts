@@ -9,6 +9,7 @@ interface Env {
   S3_BUCKET_NAME: string;
   AWS_ACCESS_KEY: string;
   AWS_SECRET_KEY: string;
+  OPENAI_API_KEY: string;
 }
 
 export const ENV: Env = {
@@ -19,4 +20,5 @@ export const ENV: Env = {
   S3_BUCKET_NAME: process.env.S3_BUCKET_NAME || '',
   AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY || '',
   AWS_SECRET_KEY: process.env.AWS_SECRET_KEY || '',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
 };
