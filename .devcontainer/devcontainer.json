@@ -1,5 +1,5 @@
 {
     "forwardPorts": [3000, 3001],
-    "postCreateCommand": "/bin/bash .devcontainer/setup.sh"
- }
+    "postCreateCommand": "/bin/bash .devcontainer/start.sh"
+}
   

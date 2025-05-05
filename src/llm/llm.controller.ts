@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Res, Sse, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res, Sse, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { LlmService } from './llm.service';
 import { TransformfileService } from 'src/transformfile/transformfile.service';
 // import { ENV } from 'config/env';
@@ -21,7 +21,12 @@ export class LlmController {
             storage : memoryStorage(),
         })
     )
-    async createEmbedding(@UploadedFile() file: Express.Multer.File) {
+    async createEmbedding(@UploadedFile() file: Express.Multer.File,
+    @Query('userID') userID: string,
+    @Query('collectionName') collectionName: string,
+    @Query('spaceID') spaceID: string,
+    @Query('fileID') fileID: string
+  ) {
         this.progressSuject.next({
             data: {
               score: 10,
@@ -50,7 +55,7 @@ export class LlmController {
           });
 
         // 3 embedding
-        const embedding = await this.LlmService.geminiEmbedding(extract)
+        const embedding = await this.LlmService.geminiEmbedding(chunks)
         this.progressSuject.next({
             data: {
               score: 10,
@@ -59,20 +64,19 @@ export class LlmController {
           });
 
         // 4 store vector
-        const storeVector = await this.LlmService.storeEmbedding(embedding,'123','pdf','1','test.pdf')
+        const storeVector = await this.LlmService.storeEmbedding(chunks,embedding,userID,collectionName,spaceID,file.originalname)
         this.progressSuject.next({
             data: {
               score: 10,
               description: '[MIND] Deepsearch'
             }
-          });
+        });
         return ({
             extract : extract,
             embedding : embedding,
             langchain : chunks,
             moderation : moderation.results[0].flagged,
             qdrant : storeVector,
-            // embedding : embedding,
         })
 
     }
@@ -98,6 +102,28 @@ export class LlmController {
     //         flagged : respone.results[0].flagged,
     //     })
     // }
+
+
+    @Post('embeddingPrompt')
+    async createEmbeddingPrompt(
+      @Body('prompt') prompt: string,
+      @Body('userID') userID: string,
+      @Body('collectionName') collectionName: string,
+      @Body('spaceID') spaceID: string,
+      @Body('fileID') fileID: string) {
+      const moderation = await this.LlmService.moderationGPT(prompt)
+      // const embedding = await this.LlmService.geminiChuckEmbedding(prompt)
+      // const query = await this.LlmService.queryEmbedding(embedding,userID,spaceID,fileID,collectionName)
+      return({
+        prompt : prompt,
+        // embedding: embedding,
+        // query: query,
+        moderation : moderation,
+      })
+    }
+
+
+
 
     
 

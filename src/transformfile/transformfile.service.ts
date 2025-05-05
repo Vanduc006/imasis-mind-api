@@ -4,6 +4,7 @@ import * as pdf from 'pdf-parse';
 @Injectable()
 export class TransformfileService {
     async PrasePDF(file : Express.Multer.File) {
+        // console.log(file)
         try {
             const data = await pdf(file.buffer); 
             // console.log(data.info)

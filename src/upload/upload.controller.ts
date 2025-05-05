@@ -39,7 +39,9 @@ export class UploadController {
     // }
 
     @Post('presigned')
-    async createPresigned(@Query('key') key: string, @Query('timeout') timeout: number) {
+    async createPresigned(
+        @Query('key') key: string, 
+        @Query('timeout') timeout: number) {
         const url = await this.UploadService.getPresignedURL(key,timeout)
         return({
             timeout: timeout,
@@ -50,7 +52,10 @@ export class UploadController {
     }
 
     @Post('presignedpost')
-    async createSignedPost(@Query('key') key:string, @Query('timeout') timeout : number, @Query('size') size : number ) {
+    async createSignedPost(
+        @Query('key') key:string, 
+        @Query('timeout') timeout : number, 
+        @Query('size') size : number ) {
         const url = await this.UploadService.postPreginedURL(key,timeout)
         this.progressSuject.next({
             data : {
