@@ -6,7 +6,8 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'https://cuddly-chainsaw-q59gwg69w57h9w47-5173.app.github.dev',
-      'https://imasis.id.vn'
+      'https://imasis.id.vn',
+      'https://glorious-meme-wpqg9v4x4662www-5173.app.github.dev',
     ],
     credentials: true,
   });
