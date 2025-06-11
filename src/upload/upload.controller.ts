@@ -53,9 +53,10 @@ export class UploadController {
 
     @Post('presignedpost')
     async createSignedPost(
-        @Query('key') key:string, 
-        @Query('timeout') timeout : number, 
-        @Query('size') size : number ) {
+        @Body('spaceid') spaceID : string,
+        @Body('key') key:string, 
+        @Body('timeout') timeout : number, 
+        @Body('size') size : number ) {
         const url = await this.UploadService.postPreginedURL(key,timeout)
         this.progressSuject.next({
             data : {

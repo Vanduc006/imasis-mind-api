@@ -10,6 +10,8 @@ interface Env {
   AWS_ACCESS_KEY: string;
   AWS_SECRET_KEY: string;
   OPENAI_API_KEY: string;
+  SUPABASE_URL : string;
+  SUPABASE_KEY : string;
 }
 
 export const ENV: Env = {
@@ -21,4 +23,6 @@ export const ENV: Env = {
   AWS_ACCESS_KEY: process.env.AWS_ACCESS_KEY || '',
   AWS_SECRET_KEY: process.env.AWS_SECRET_KEY || '',
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  SUPABASE_URL : process.env.SUPABASE_URL || '',
+  SUPABASE_KEY : process.env.SUPABASE_KEY || '',
 };

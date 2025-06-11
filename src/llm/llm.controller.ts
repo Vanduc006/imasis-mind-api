@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, Res, Sse, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { LlmService } from './llm.service';
 import { TransformfileService } from 'src/transformfile/transformfile.service';
+import { DatabaseService } from 'src/database/database.service';
 // import { ENV } from 'config/env';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -13,15 +14,16 @@ export class LlmController {
     constructor(
         private readonly LlmService : LlmService,
         private readonly TransformfileService : TransformfileService,
+        private readonly DatabaseService : DatabaseService,
     ) {}
-
     @Post('embeddingPDF') 
     @UseInterceptors(
         FileInterceptor('file',{
             storage : memoryStorage(),
         })
     )
-    async createEmbedding(@UploadedFile() file: Express.Multer.File,
+    async createEmbedding(
+    @UploadedFile() file: Express.Multer.File,
     @Query('userID') userID: string,
     @Query('collectionName') collectionName: string,
     @Query('spaceID') spaceID: string,
@@ -106,19 +108,28 @@ export class LlmController {
 
     @Post('embeddingPrompt')
     async createEmbeddingPrompt(
+      // @Body('messageid') messageid : string,
       @Body('prompt') prompt: string,
       @Body('userID') userID: string,
       @Body('collectionName') collectionName: string,
       @Body('spaceID') spaceID: string,
-      @Body('fileID') fileID: string) {
+      // @Body('fileID') fileID: string
+    ) {
+      const newID = await this.DatabaseService.createID()
+      const newMessage = await this.DatabaseService.newMessage(newID,prompt,userID,spaceID)
       const moderation = await this.LlmService.moderationGPT(prompt)
-      // const embedding = await this.LlmService.geminiChuckEmbedding(prompt)
-      // const query = await this.LlmService.queryEmbedding(embedding,userID,spaceID,fileID,collectionName)
+      // if ( moderation.results[0].flagged == true ) {
+      await this.DatabaseService.updateMessage(newID,spaceID,{moderation : `${moderation.results[0].flagged}`})
+      // }
+      const embedding = await this.LlmService.geminiChunkEmbedding(prompt)
+      const query = await this.LlmService.queryEmbedding(embedding,userID,spaceID,collectionName)
       return({
+        messageid : newID,
+        adding_status : newMessage,
         prompt : prompt,
         // embedding: embedding,
-        // query: query,
-        moderation : moderation,
+        query: query,
+        moderation : moderation.results[0].flagged,
       })
     }
 

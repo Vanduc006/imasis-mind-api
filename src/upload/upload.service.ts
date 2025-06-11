@@ -20,11 +20,11 @@ export class UploadService {
       })
     }
 
-
     async getPresignedURL(key: string, exprise: number):Promise<string> {
       const params: GetObjectCommandInput = {
         Bucket: this.bucketname,
         Key: key,
+        ResponseContentDisposition: "inline",
       }
       const command = new GetObjectCommand(params)
       const url = await getSignedUrl(this.s3, command, {expiresIn: exprise})

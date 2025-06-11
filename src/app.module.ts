@@ -8,10 +8,11 @@ import { TransformfileService } from './transformfile/transformfile.service';
 import { UploadService } from './upload/upload.service';
 import { LlmService } from './llm/llm.service';
 import { LlmController } from './llm/llm.controller';
+import { DatabaseService } from './database/database.service';
 
 @Module({
   imports: [ParamsModule],
   controllers: [AppController, UploadController, ParamsController, LlmController],
-  providers: [AppService, TransformfileService, UploadService, LlmService],
+  providers: [AppService, TransformfileService, UploadService, LlmService, DatabaseService],
 })
 export class AppModule {}

@@ -71,7 +71,7 @@ export class LlmService {
     
     //     return embeddings;
     // }
-    async geminiChuckEmbedding(
+    async geminiChunkEmbedding(
       chunk : string, 
       retries = 3, 
       delay = 5000 ):Promise<any> {
@@ -89,7 +89,7 @@ export class LlmService {
             if (isRateLimit && retries > 0) {
                 console.warn(`Rate limited. Retrying after ${delay}ms...`);
                 await new Promise((res) => setTimeout(res, delay));
-                return this.geminiChuckEmbedding(chunk, retries - 1, delay * 2);
+                return this.geminiChunkEmbedding(chunk, retries - 1, delay * 2);
             }
             throw error
         }
@@ -98,7 +98,7 @@ export class LlmService {
     async geminiEmbedding(chunks : string[]) {
         const response = await Promise.all(
             chunks.map(chunk => 
-              this.limit(() => this.geminiChuckEmbedding(chunk))
+              this.limit(() => this.geminiChunkEmbedding(chunk))
             )
           );
         return response
@@ -168,24 +168,41 @@ export class LlmService {
       vector : number[],
       userID: string, 
       spaceID: string, 
-      fileID : string, 
+      // fileID : string, 
       collectionName: string) {
         const result = await this.client.search(collectionName, {
             vector : vector,
-            limit : 5,
+            limit : 3,
             filter : {
               must : [
-                { key : "userID", match : { value : userID}},
+                // { key : "userID", match : { value : userID}},
                 { key : "spaceID", match : { value : spaceID }},
-                { key : "fileID", match : { value : fileID}},
+                // { key : "fileID", match : { value : fileID}},
               ]
             },
             with_payload : true,
-            with_vector : true,
+            with_vector : false,
         })
         // console.log(result)
         return result
     }
+
+    async initQdrantIndexes(collectionName: string) {
+      const indexedFields = ['userID', 'spaceID', 'fileID'];
+
+      for (const field of indexedFields) {
+        try {
+          await this.client.createPayloadIndex(collectionName, {
+            field_name: field,
+            field_schema: 'keyword',
+          });
+          console.log(`✅ Indexed field: ${field}`);
+        } catch (error) {
+          console.warn(`⚠️ Could not index field "${field}":`, error?.response?.data || error?.message);
+        }
+      }
+    }
+
 
 
     async moderationGPT(content : string) {
