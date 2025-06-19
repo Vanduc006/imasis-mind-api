@@ -1,19 +1,50 @@
-import { Controller, Post, UploadedFiles, UseInterceptors, Get, Body, Param, Query, Sse, Res } from '@nestjs/common';
+import { Controller, Post, UploadedFiles, UseInterceptors, Get, Body, Param, Query, Sse, Res, UploadedFile } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage} from 'multer';
 import { UploadService } from './upload.service';
-import { Subject } from 'rxjs';
+import { Subject, timeout } from 'rxjs';
 import { Response } from 'express';
+import { LLMProcessor } from 'src/llm/llm.processor';
+import { LlmService } from 'src/llm/llm.service';
 
 @Controller('upload')
 
 export class UploadController {
     private readonly progressSuject = new Subject<any>()
-    constructor(private readonly UploadService : UploadService) {}
+    constructor(
+        private readonly UploadService : UploadService,
+        private readonly LlmService : LlmService,
+        // private readonly LLMProcessor : LLMProcessor,
+    ) {}
     
-    @Get()
-    getUpload(): string {
-        return 'this is route for upload function';
+    @Post()
+    @UseInterceptors(
+        FileInterceptor('file',{
+            storage : memoryStorage(),
+        })
+    )
+    async createUploadObject(
+        @UploadedFile() file: Express.Multer.File,
+        @Body('data') rawData : string,
+    ) {
+        const parseData = JSON.parse(rawData)
+        // use by parseData.UserID ...
+        const url = await this.UploadService.postPreginedURL(parseData.fileID,parseData.timeout)
+        await this.LlmService.enqueueLLMJob({
+            file,
+            userID : parseData.userID,
+            collectionName : parseData.collectionName,
+            spaceID : parseData.spaceID,
+            fileID : parseData.fileID,
+            size : parseData.size,
+        })
+        return({
+            timeout: parseData.timeout,
+            key : parseData.fileID,
+            url : url,
+            size : parseData.size,
+
+        })
     }
 
     // @Post()

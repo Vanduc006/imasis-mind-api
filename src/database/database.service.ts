@@ -57,4 +57,47 @@ export class DatabaseService {
     async createID() {
         return ulid()
     }
+
+    async newObject(
+        spaceID : string,
+        // status : string,
+        type : string,
+        key : string,
+        name : string,
+        size : string
+        // extract : string,
+    ) {
+        const {error} = await this.supabase
+        .from('file')
+        .insert({
+            spaceid : spaceID,
+            status : "Process",
+            type : type,
+            key : key,
+            name : name,
+            size : size,
+            
+        })
+    }
+
+    async updateObject(
+        spaceID : string,
+        fileID : string,
+        updates : Partial<{
+            status : string,
+            extract : string,
+        }>
+    ) {
+        const { error } = await this.supabase
+        .from('file')
+        .update(updates)
+        .match({
+            spaceid : spaceID,
+            key : fileID,
+        })
+        if ( error ) {
+            return error
+        }
+        return 'update object ok'
+    }
 }

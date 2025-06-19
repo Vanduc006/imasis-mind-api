@@ -12,6 +12,7 @@ interface Env {
   OPENAI_API_KEY: string;
   SUPABASE_URL : string;
   SUPABASE_KEY : string;
+  REDIS_KEY : string,
 }
 
 export const ENV: Env = {
@@ -25,4 +26,5 @@ export const ENV: Env = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
   SUPABASE_URL : process.env.SUPABASE_URL || '',
   SUPABASE_KEY : process.env.SUPABASE_KEY || '',
+  REDIS_KEY : process.env.REDIS_KEY || '',
 };

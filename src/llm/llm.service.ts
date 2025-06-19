@@ -6,9 +6,15 @@ import { ENV } from 'config/env';
 import { RecursiveCharacterTextSplitter , TokenTextSplitter} from '@langchain/textsplitters';
 import { v4 as uuidv4 } from 'uuid';
 import * as pLimit from 'p-limit';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+
 
 @Injectable()
 export class LlmService {
+    constructor(@InjectQueue('llmQueue') private llmQueue : Queue) {
+      
+    }
 
     private readonly qdrantURL = ENV.QDRANT_URL
     private readonly qdrantAPIKEY = ENV.QDRANT_API_KEY
@@ -203,13 +209,23 @@ export class LlmService {
       }
     }
 
-
-
     async moderationGPT(content : string) {
         const moderation = await this.clientGPT.moderations.create({
             model: "omni-moderation-2024-09-26",
             input: content,
         })
         return moderation
+    }
+
+    async enqueueLLMJob(data : {
+      file? : Express.Multer.File,
+      userID? : string,
+      collectionName? : string,
+      spaceID? : string,
+      fileID? : string,
+      size? : string,
+      // originalName : string
+    }) {
+      await this.llmQueue.add('embeddingPDF', data)
     }
 }

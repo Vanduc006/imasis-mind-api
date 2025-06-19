@@ -1,0 +1,538 @@
+﻿Báo cáo chuyên sâu: Xây dựng và tối ưu hóa dịch vụ RAG đa tệp với các tính năng nâng cao tương tự NotebookLM
+
+
+
+
+Tóm tắt điều hành
+
+
+Báo cáo này phân tích kiến trúc dịch vụ Retrieval-Augmented Generation (RAG) hiện tại của người dùng, sử dụng NestJS, LangChain, Qdrant và Gemini embedding, với mục tiêu khắc phục các vấn đề về hiệu suất và triển khai các tính năng nâng cao như tạo sơ đồ tư duy, tạo câu đố và tạo podcast hai người, tương tự như NotebookLM. Phân tích chỉ ra rằng hiệu suất RAG là một vấn đề toàn diện, đòi hỏi tối ưu hóa ở mọi giai đoạn của pipeline.
+Các khuyến nghị chính tập trung vào việc nâng cao hiệu suất RAG thông qua các chiến lược phân đoạn tài liệu thông minh, xử lý PDF phức tạp, tối ưu hóa độ chính xác truy xuất bằng tìm kiếm lai và xếp hạng lại, điều chỉnh hiệu suất Qdrant, và đánh giá hiệu quả của mô hình nhúng Gemini cho tiếng Việt. Đối với các tính năng nâng cao, báo cáo đề xuất các phương pháp tiếp cận dựa trên LLM để trích xuất biểu đồ tri thức cho sơ đồ tư duy, tạo câu hỏi và câu trả lời có cấu trúc cho câu đố, và tạo kịch bản podcast đa người nói với tích hợp chuyển văn bản thành giọng nói (TTS) tiếng Việt. Việc triển khai các tính năng này đòi hỏi sự kiểm soát chặt chẽ đầu ra của LLM thông qua các cấu trúc dữ liệu và kỹ thuật kỹ thuật nhắc lệnh tiên tiến.
+
+
+1. Giới thiệu về dịch vụ RAG đa tệp
+
+
+
+
+1.1. Kiến trúc hệ thống hiện tại và mục tiêu
+
+
+Hệ thống RAG hiện tại của người dùng được mô tả với một quy trình xử lý tài liệu rõ ràng: upload -> pdf extract -> langchain tokenize chunk -> embed chunk -> store to vector db. Cơ chế truy xuất thông tin được thực hiện bằng cách chuyển đổi lời nhắc của người dùng thành nhúng, sau đó truy vấn cơ sở dữ liệu vector: user prompt -> embed prompt -> query to vector db. Ngăn xếp công nghệ hiện tại bao gồm NestJS, LangChain, Qdrant và Gemini embedding. Mục tiêu chính của dự án là phát triển một dịch vụ RAG đa tệp có khả năng tạo sơ đồ tư duy, câu đố và podcast hai người, lấy cảm hứng từ các tính năng của NotebookLM.
+
+
+1.2. Xác định các nút thắt cổ chai về hiệu suất
+
+
+Người dùng đã chỉ ra rằng "performance đang không được tốt," cho thấy một sự không hài lòng chung về khả năng phản hồi hoặc độ chính xác của hệ thống. Trong các hệ thống phức tạp như RAG, hiệu suất không phải là vấn đề của một thành phần duy nhất mà là thuộc tính tổng hợp của toàn bộ pipeline. Một nút thắt cổ chai ở bất kỳ giai đoạn nào — ví dụ, phân đoạn không hiệu quả, truy xuất chậm, xếp hạng lại không tối ưu, hoặc thậm chí xử lý ngữ cảnh LLM — đều có thể làm giảm hiệu suất tổng thể.1 Do đó, một chiến lược cải thiện hiệu suất toàn diện phải giải quyết từng giai đoạn của pipeline RAG, từ xử lý tài liệu ban đầu đến tạo phản hồi cuối cùng. Cách tiếp cận đa diện này sẽ định hướng các khuyến nghị chi tiết trong các phần tiếp theo.
+
+
+2. Nâng cao hiệu suất RAG: Một cách tiếp cận đa tầng
+
+
+
+
+2.1. Các chiến lược phân đoạn và nhập tài liệu nâng cao
+
+
+
+
+2.1.1. Phân đoạn thông minh để duy trì tính gắn kết ngữ nghĩa
+
+
+Phân đoạn tài liệu là một bước cơ bản có tác động đáng kể đến hiệu suất của Retrieval-Augmented Generation (RAG) bằng cách xác định cách các tài liệu nguồn được phân đoạn trước khi lập chỉ mục.1 Việc lựa chọn chiến lược phân đoạn, kích thước phân đoạn và mức độ chồng chéo của phân đoạn là những yếu tố quan trọng.2 Các phân đoạn nhỏ hơn thường hoạt động tốt hơn đối với các mô hình có cửa sổ ngữ cảnh nhỏ hơn, nhưng kích thước tối ưu cần cân bằng giữa việc giữ lại ngữ cảnh, độ chính xác truy xuất và hiệu quả tính toán.2 Các khuyến nghị phổ biến cho kích thước phân đoạn dao động từ 128–512 token 3, với Cohere Embed có kích thước phân đoạn tối đa là 512 token.4
+Sự chồng chéo giữa các phân đoạn là rất quan trọng để duy trì ngữ cảnh qua các ranh giới phân đoạn.2 Có nhiều loại chồng chéo khác nhau, bao gồm chồng chéo theo token, theo câu và theo cửa sổ trượt.6 LangChain cung cấp nhiều kỹ thuật phân tách văn bản khác nhau:
+* Phân đoạn kích thước cố định: Đây là cách tiếp cận đơn giản nhất, phân đoạn văn bản thành các phần có kích thước bằng nhau.2 Phương pháp này có thể dựa trên ký tự (
+CharacterTextSplitter) hoặc dựa trên token (TokenTextSplitter).5 Tuy nhiên, nó có thể cắt ngang câu hoặc đoạn văn một cách đột ngột và bỏ qua các điểm ngắt ngữ nghĩa tự nhiên.7
+* Phân đoạn đệ quy: Đây là phương pháp được khuyến nghị cho văn bản chung. Nó cố gắng phân tách văn bản theo thứ bậc bằng cách sử dụng danh sách các dấu phân cách ưu tiên (ví dụ: ["\n\n", "\n", " ", ""]), nhằm giữ nguyên các đơn vị lớn hơn (đoạn văn, câu) càng nhiều càng tốt.2
+* Phân đoạn ngữ nghĩa: Phương pháp này nhóm các câu dựa trên sự tương đồng ngữ nghĩa của các nhúng của chúng, tạo ra các phân đoạn nhận biết ngữ cảnh.2 Tuy nhiên, một số nghiên cứu chỉ ra rằng chi phí tính toán liên quan đến phân đoạn ngữ nghĩa có thể không luôn được biện minh bằng các cải thiện hiệu suất nhất quán.15
+* Phân đoạn dựa trên cấu trúc tài liệu: Phương pháp này phân tách dựa trên cấu trúc vốn có của tài liệu (ví dụ: tiêu đề Markdown, thẻ HTML, phần tử JSON, hàm mã).2
+* Phân đoạn tác tử (Agentic chunking): Một phương pháp thử nghiệm tận dụng LLM để xác định việc phân tách tài liệu phù hợp dựa trên ý nghĩa ngữ nghĩa cũng như cấu trúc nội dung.2
+Các chiến lược phân đoạn tinh vi là quan trọng để giảm thiểu nhiễu trong khi vẫn duy trì tính gắn kết ngữ nghĩa trong các đoạn văn được truy xuất.1 Sự độc lập về ngữ nghĩa giữa các đoạn văn đặc biệt cần thiết cho độ chính xác về mặt thực tế.1 Việc lựa chọn chiến lược phân đoạn tối ưu phụ thuộc nhiều vào trường hợp sử dụng và dữ liệu cụ thể, đòi hỏi thử nghiệm thực nghiệm.2 Người dùng phải chủ động thử nghiệm các kích thước phân đoạn, mức độ chồng chéo và chiến lược khác nhau (ví dụ: đệ quy so với ngữ nghĩa) phù hợp với loại tài liệu và mẫu truy vấn của họ để tối đa hóa hiệu quả của RAG.
+Việc chuyển từ phân đoạn kích thước cố định sang phân đoạn phân cấp và ngữ nghĩa mang lại con đường cải thiện tính toàn vẹn ngữ cảnh. RecursiveCharacterTextSplitter của LangChain 5 được khuyến nghị cho văn bản chung vì nó tôn trọng luồng ngôn ngữ tự nhiên bằng cách ưu tiên các đơn vị lớn hơn như đoạn văn và câu. Đây là một bước tiến đáng kể so với các phân đoạn kích thước cố định, vốn có thể cắt ngang câu một cách đột ngột.7 Phân đoạn ngữ nghĩa 2 trực tiếp giải quyết mục tiêu gắn kết ngữ nghĩa, nhóm văn bản theo ý nghĩa. Tuy nhiên, một nghiên cứu đặt ra câu hỏi liệu "chi phí tính toán liên quan đến phân đoạn ngữ nghĩa có được biện minh bằng các cải thiện hiệu suất nhất quán" hay không.15 Điều này nhấn mạnh một sự đánh đổi quan trọng: mặc dù phân đoạn ngữ nghĩa nhằm mục đích đạt được chất lượng cao hơn, nó có thể gây ra độ trễ hoặc chi phí xử lý cao hơn. Người dùng cần cân nhắc tầm quan trọng của độ chính xác ngữ nghĩa tuyệt đối so với các ràng buộc thực tế về hiệu suất và tài nguyên tính toán cho ứng dụng cụ thể của họ.
+
+
+2.1.2. Xử lý cấu trúc PDF phức tạp (Bảng, Hình, Phương trình)
+
+
+Các phương pháp phân đoạn truyền thống thường xử lý kém các định dạng hỗn hợp như bảng, danh sách và hình ảnh, vốn thường xuyên xuất hiện trong tài liệu.1 Việc phân đoạn đơn điểm thông thường bỏ qua cấu trúc và bố cục phong phú của PDF.16 Các hệ thống RAG đa phương thức được thiết kế để tích hợp nhiều loại dữ liệu, bao gồm hình ảnh, âm thanh và video, và có thể giải thích hiệu quả các bảng, biểu đồ và trực quan hóa phức tạp.17 Ví dụ, GPT-4o có thể giải thích nội dung của các bảng được trích xuất dưới dạng hình ảnh.17
+Các khung phân tích nâng cao như NeuSym-RAG đề xuất phân đoạn đa điểm và phân tích dựa trên lược đồ để tổ chức nội dung PDF bán cấu trúc vào cả cơ sở dữ liệu quan hệ và vectorstore. Điều này bao gồm việc phân đoạn PDF theo các mức độ chi tiết khác nhau (trang, phần, token có độ dài cố định), trích xuất các yếu tố phi văn bản bằng OCR và tóm tắt các yếu tố đã phân tích bằng LLM hoặc VLM.16
+Các công cụ phân tích PDF chuyên biệt có sẵn, bao gồm PyPDF, Unstructured, PyMuPDF, PDFPlumber và LlamaParse.18 LlamaParse được nhấn mạnh vì khả năng trích xuất văn bản, bảng, hình ảnh, biểu đồ và phương trình toán học từ PDF, xuất chúng ở định dạng Markdown hoặc JSON có cấu trúc. Đầu ra Markdown bảo toàn cấu trúc tài liệu vốn có (tiêu đề, tiêu đề phụ, bảng, hình ảnh), tạo điều kiện phân tách dễ dàng hơn. Chế độ JSON cung cấp cấu trúc tài liệu hoàn chỉnh, bao gồm siêu dữ liệu cho hình ảnh và bảng.21 PyMuPDFLoader, một tích hợp của LangChain, có thể trích xuất hình ảnh (với các công cụ OCR như RapidOCR, Tesseract hoặc LLM đa phương thức) và bảng (xuất HTML, Markdown hoặc CSV).20
+Các bảng có thể được chuyển đổi thành tài liệu JSON cho RAG, vì việc lưu trữ chúng trực tiếp dưới dạng các đoạn văn bản có thể gây nhầm lẫn cho LLM.22 Trích xuất dữ liệu bảng thành định dạng có cấu trúc như Pandas DataFrame cũng khả thi.23 Phân đoạn theo phương thức cụ thể là rất quan trọng để đảm bảo rằng hình ảnh và bảng, vốn chứa thông tin có giá trị, được bảo toàn và truy xuất độc lập nhưng vẫn phù hợp với văn bản xung quanh.24 Việc bao gồm siêu dữ liệu phong phú (ví dụ: tiêu đề bảng, từ khóa, ngày tháng) với các phân đoạn là rất quan trọng để truy xuất hiệu quả.4
+Xử lý PDF hiệu quả cho RAG đòi hỏi phải vượt ra ngoài việc trích xuất văn bản đơn giản để hiểu cấu trúc và đa phương thức. Bước "pdf extract" hiện tại của người dùng, mặc dù là một khởi đầu tốt, có thể là một nút thắt cổ chai lớn về chất lượng truy xuất thông tin nếu tài liệu của họ chứa các bố cục phức tạp. Các nguồn tài liệu 1 khẳng định rõ ràng rằng "các phương pháp phân đoạn truyền thống xử lý kém các định dạng hỗn hợp" và "phân đoạn đơn điểm thông thường bỏ qua cấu trúc và bố cục phong phú của PDF." Điều này có nghĩa là việc chỉ trích xuất văn bản thô từ PDF sẽ bỏ lỡ hoặc làm hỏng thông tin quan trọng chứa trong bảng, hình ảnh hoặc các phần tài liệu cụ thể. Việc áp dụng các trình phân tích PDF nâng cao như LlamaParse 21 hoặc PyMuPDFLoader 20, có thể trích xuất các biểu diễn có cấu trúc (Markdown, JSON) của các yếu tố này, là rất quan trọng. Sự chuyển đổi từ trích xuất văn bản đơn giản sang hiểu cấu trúc và đa phương thức này là một cải tiến cơ bản có tác động trực tiếp đến mức độ liên quan và tính đầy đủ của thông tin được truy xuất, từ đó nâng cao hiệu suất RAG tổng thể.
+Việc tích hợp các biểu diễn có cấu trúc của bảng và hình ảnh (ví dụ: JSON, Markdown) với các phân đoạn văn bản, có thể sử dụng LLM đa phương thức, là rất quan trọng cho RAG toàn diện. Việc chỉ trích xuất các yếu tố phức tạp là chưa đủ; chúng phải được biểu diễn theo cách mà LLM có thể xử lý hiệu quả. Các nguồn tài liệu 17 đề xuất chuyển đổi bảng thành tài liệu JSON hoặc Markdown, và sử dụng LLM đa phương thức (như GPT-4o) để giải thích hình ảnh hoặc bảng được trích xuất dưới dạng hình ảnh. Việc lưu trữ bảng dưới dạng các đoạn văn bản thuần túy có thể dẫn đến sự nhầm lẫn của LLM.22 Điều này ngụ ý cần có một chiến lược lập chỉ mục "đa vector" hoặc "đa phương thức" trong đó nội dung văn bản, dữ liệu bảng có cấu trúc và mô tả hình ảnh (hoặc nhúng của chính hình ảnh) đều được lập chỉ mục, có thể trong cùng một bộ sưu tập Qdrant bằng cách sử dụng nhiều vector trên mỗi đối tượng.25 Cách tiếp cận này đảm bảo rằng các truy vấn yêu cầu thông tin từ các yếu tố phi văn bản có thể được trả lời chính xác, cải thiện đáng kể độ chính xác về mặt thực tế và tính đầy đủ của các phản hồi của hệ thống RAG.
+Bảng 1: So sánh các chiến lược phân đoạn tài liệu LangChain
+
+
+Chiến lược phân đoạn
+	Mô tả
+	Lớp/Phương thức LangChain
+	Đặc điểm chính
+	Ưu điểm
+	Nhược điểm
+	Trường hợp sử dụng tốt nhất
+	Kích thước cố định
+	Chia văn bản thành các phần có kích thước bằng nhau (ký tự, token, từ) với tùy chọn chồng chéo.
+	CharacterTextSplitter, TokenTextSplitter
+	Đơn giản, kích thước phân đoạn đồng nhất.
+	Dễ triển khai, đơn giản hóa các hoạt động hàng loạt.
+	Có thể cắt ngang câu/đoạn văn đột ngột, bỏ qua các điểm ngắt ngữ nghĩa tự nhiên.
+	Tài liệu tương đối đồng nhất với định dạng nhất quán (ví dụ: nhật ký, văn bản đơn giản).
+	Đệ quy
+	Chia văn bản đệ quy dựa trên thứ bậc các dấu phân cách (ví dụ: \n\n, \n, , ``) cho đến khi các phân đoạn đủ nhỏ.
+	RecursiveCharacterTextSplitter
+	Ưu tiên giữ nguyên các đơn vị lớn hơn (đoạn văn, câu), duy trì luồng ngôn ngữ tự nhiên.
+	Bảo toàn cấu trúc và tính gắn kết của văn bản, thích ứng với các mức độ chi tiết khác nhau.
+	Phức tạp hơn để thiết lập và quản lý do tạo ra các phân đoạn có kích thước khác nhau.
+	Văn bản chung, tài liệu có cấu trúc phân cấp rõ ràng.
+	Ngữ nghĩa
+	Chia văn bản bằng cách nhóm các câu dựa trên sự tương đồng ngữ nghĩa của các nhúng của chúng.
+	Không có lớp chuyên biệt, thường được triển khai bằng cách sử dụng nhúng và so sánh độ tương đồng.
+	Tạo ra các phân đoạn nhận biết ngữ cảnh, giữ các ý tưởng liên quan lại với nhau.
+	Nâng cao chất lượng truy xuất bằng cách duy trì tính toàn vẹn ngữ nghĩa.
+	Yêu cầu nhiều nỗ lực và chậm hơn đáng kể so với các phương pháp khác, chi phí tính toán cao.
+	Khi việc duy trì tính toàn vẹn ngữ nghĩa của văn bản là rất quan trọng (ví dụ: truy vấn dài).
+	Dựa trên cấu trúc tài liệu
+	Chia dựa trên cấu trúc vốn có của tài liệu (ví dụ: tiêu đề Markdown, thẻ HTML, phần tử JSON, khối mã).
+	MarkdownHeaderTextSplitter, HTMLHeaderTextSplitter, RecursiveJsonSplitter
+	Bảo toàn tổ chức logic của tài liệu, duy trì ngữ cảnh trong mỗi phân đoạn.
+	Hiệu quả hơn cho các tác vụ hạ nguồn như truy xuất hoặc tóm tắt.
+	Yêu cầu tài liệu có cấu trúc rõ ràng.
+	Tài liệu có cấu trúc rõ ràng (HTML, Markdown, JSON, mã nguồn).
+	Tác tử (Thử nghiệm)
+	Tận dụng AI tác tử để LLM tự xác định việc phân tách tài liệu phù hợp dựa trên ý nghĩa ngữ nghĩa và cấu trúc nội dung.
+	Thử nghiệm, không có lớp công khai.
+	Mô phỏng khả năng suy luận của con người khi xử lý tài liệu dài.
+	Tiềm năng cho phân đoạn chất lượng cao, thích ứng.
+	Thử nghiệm, phức tạp để thiết lập và quản lý.
+	Các trường hợp thử nghiệm tiên tiến, nghiên cứu.
+	Bảng 2: Khả năng của các trình tải tài liệu PDF cho RAG
+Trình tải/Công cụ
+	Tích hợp LangChain
+	Tính năng chính
+	Ưu điểm
+	Nhược điểm
+	Trường hợp sử dụng
+	PyPDFLoader
+	Có (PyPDFLoader) 18
+	Trích xuất văn bản theo trang hoặc luồng đơn, trích xuất hình ảnh (với OCR/LLM), trích xuất bảng (HTML/Markdown/CSV).20
+	Dễ sử dụng, tích hợp tốt với LangChain, hỗ trợ trích xuất hình ảnh và bảng cơ bản.
+	Có thể gặp khó khăn với bố cục PDF phức tạp, không phải lúc nào cũng bảo toàn cấu trúc hoàn hảo.
+	Xử lý PDF chung, tài liệu chủ yếu là văn bản.
+	Unstructured
+	Có (UnstructuredFileLoader) 18
+	Phân vùng và phân loại nội dung nâng cao, xử lý PDF, HTML, Word, hình ảnh, chuẩn hóa dữ liệu thành JSON có cấu trúc.19
+	Chuyên biệt trong việc chuyển đổi dữ liệu phi cấu trúc cho LLM, bảo toàn siêu dữ liệu.
+	Có thể yêu cầu thiết lập phức tạp hơn, có thể có chi phí liên quan đến nền tảng doanh nghiệp.
+	Tài liệu doanh nghiệp đa định dạng, cần xử lý dữ liệu phi cấu trúc phức tạp.
+	PyMuPDFLoader
+	Có (PyMuPDFLoader) 18
+	Trích xuất văn bản theo trang/luồng đơn, trích xuất hình ảnh (RapidOCR, Tesseract, LLM đa phương thức), trích xuất bảng (HTML/Markdown/CSV).20
+	Hiệu quả, hỗ trợ trích xuất hình ảnh và bảng linh hoạt, cung cấp siêu dữ liệu chi tiết.
+	Có thể yêu cầu cấu hình thêm cho các tính năng nâng cao.
+	Xử lý PDF hiệu suất cao, cần trích xuất hình ảnh/bảng.
+	PDFPlumber
+	Có (PDFPlumberLoader) 18
+	Trích xuất văn bản, bảng, metadata, bảo toàn cấu trúc tài liệu gốc.6
+	Lý tưởng để nắm bắt dữ liệu bảng từ các bảng phức tạp, bảo toàn ngắt đoạn văn và tiêu đề phần.6
+	Có thể không có khả năng xử lý hình ảnh nâng cao như các công cụ khác.
+	Tài liệu PDF nặng về bảng, cần trích xuất dữ liệu bảng chính xác.
+	LlamaParse
+	Có (thông qua LlamaIndex) 19
+	Trích xuất văn bản, bảng, hình ảnh, biểu đồ, phương trình toán học; đầu ra Markdown hoặc JSON có cấu trúc; hướng dẫn phân tích tùy chỉnh.21
+	Khả năng trích xuất toàn diện, đầu ra có cấu trúc giúp phân đoạn dễ dàng, hỗ trợ LLM-enabled parsing.
+	Có thể yêu cầu API key và có chi phí, tích hợp có thể cần thêm bước với LangChain.
+	Tài liệu phức tạp (báo cáo tài chính, bài báo khoa học) nơi cấu trúc và metadata là quan trọng.
+	NeuSym-RAG
+	Khái niệm/Không tích hợp trực tiếp LangChain
+	Phân đoạn đa điểm, phân tích dựa trên lược đồ, tổ chức nội dung PDF bán cấu trúc vào DB quan hệ và vectorstore.16
+	Cách tiếp cận toàn diện để hiểu cấu trúc PDF, kết hợp cơ sở dữ liệu quan hệ và vectorstore.
+	Khung khái niệm, có thể yêu cầu triển khai tùy chỉnh đáng kể.
+	Nghiên cứu và phát triển nâng cao, cần hiểu sâu về cấu trúc tài liệu.
+	
+
+2.2. Tối ưu hóa độ chính xác truy xuất
+
+
+
+
+2.2.1. Tìm kiếm lai (Ngữ nghĩa + Từ khóa)
+
+
+Tìm kiếm lai kết hợp tìm kiếm tương tự vector (truy xuất dày đặc) với các kỹ thuật khác như tìm kiếm toàn văn bản hoặc BM25 (truy xuất dựa trên từ khóa).28 BM25 (Best Matching 25) là một hàm xếp hạng nổi trội trong việc khớp từ vựng, tìm các từ hoặc cụm từ khớp chính xác, và đặc biệt hiệu quả đối với các truy vấn có định danh duy nhất hoặc thuật ngữ kỹ thuật. Nó bổ sung cho các nhúng ngữ nghĩa bằng cách giải quyết các trường hợp mà nhúng có thể bỏ lỡ các khớp chính xác.31
+Qdrant hỗ trợ tìm kiếm lai một cách tự nhiên bằng cách kết hợp các vector thưa (ví dụ: BM25, SPLADE) và dày đặc. Nó áp dụng một thuật toán hợp nhất (ví dụ: hợp nhất điểm tương đối) để xếp hạng và sắp xếp kết quả từ các không gian vector khác nhau.30
+EnsembleRetriever của LangChain có thể kết hợp kết quả từ nhiều trình truy xuất (ví dụ: BM25 và trình truy xuất dày đặc) và xếp hạng lại chúng bằng các thuật toán như Reciprocal Rank Fusion, tận dụng các điểm mạnh bổ sung của các phương pháp tiếp cận khác nhau.32 Contextual Retrieval, một kỹ thuật tiền xử lý, cải thiện độ chính xác truy xuất bằng cách thêm ngữ cảnh giải thích cụ thể cho từng phân đoạn trước khi nhúng và tạo chỉ mục BM25.31
+Việc chỉ dựa vào sự tương đồng vector (truy xuất dày đặc) là không đủ cho RAG mạnh mẽ; tìm kiếm lai cải thiện đáng kể khả năng thu hồi bằng cách nắm bắt cả ý nghĩa ngữ nghĩa và các từ khóa khớp chính xác. Pipeline truy xuất hiện tại của người dùng có vẻ như chỉ thực hiện truy xuất dày đặc (tương đồng ngữ nghĩa). Tuy nhiên, các nguồn tài liệu 28 chỉ ra rõ ràng một hạn chế: nhúng dày đặc, mặc dù tốt cho việc hiểu ngữ nghĩa, có thể "bỏ lỡ các khớp chính xác quan trọng" 31 đối với các thuật ngữ cụ thể hoặc định danh duy nhất. BM25 31 được trình bày như một kỹ thuật bổ sung mạnh mẽ cho các truy vấn nặng từ khóa. Bằng cách tích hợp tìm kiếm lai, hệ thống có thể hưởng lợi từ cả việc hiểu ngữ nghĩa rộng và khớp từ khóa chính xác, dẫn đến khả năng thu hồi tài liệu liên quan cao hơn. Điều này trực tiếp giải quyết vấn đề "hiệu suất không tốt" bằng cách cải thiện độ chính xác truy xuất cơ bản, đảm bảo LLM nhận được ngữ cảnh toàn diện hơn.
+Khả năng tìm kiếm lai gốc của Qdrant, bao gồm hỗ trợ BM25 và các thuật toán hợp nhất, cung cấp một con đường hợp lý để triển khai trong ngăn xếp công nghệ hiện có. Người dùng đang sử dụng Qdrant, đây là một lợi thế đáng kể. Các nguồn tài liệu 30 xác nhận rằng Qdrant cung cấp hỗ trợ tích hợp cho tìm kiếm lai, cho phép kết hợp các vector dày đặc (ngữ nghĩa) và thưa (từ khóa, ví dụ: BM25), cùng với các thuật toán hợp nhất có thể cấu hình để kết hợp điểm số của chúng. Điều này có nghĩa là người dùng không cần phải giới thiệu một công cụ tìm kiếm riêng biệt hoặc logic tùy chỉnh phức tạp cho việc truy xuất lai. Họ có thể tận dụng các tính năng hiện có của Qdrant, giúp việc triển khai hiệu quả hơn, ít gặp vấn đề tích hợp hơn và trực tiếp giải quyết nút thắt cổ chai về hiệu suất trong giai đoạn truy xuất của họ.
+
+
+2.2.2. Các kỹ thuật xếp hạng lại sau truy xuất
+
+
+Xếp hạng lại là một thành phần quan trọng, thường bị đánh giá thấp, của các hệ thống RAG. Vai trò chính của nó là tinh chỉnh Top-N tài liệu được truy xuất bởi trình truy xuất ban đầu, chọn ra K tài liệu phù hợp nhất để nâng cao chất lượng câu trả lời và khả năng giải thích.37 Các trình xếp hạng lại dựa trên LLM tận dụng khả năng hiểu biết nâng cao của các mô hình ngôn ngữ lớn để đánh giá lại và sắp xếp lại các tài liệu được truy xuất.37
+   * Cohere Rerank: Một mô hình cross-encoder nổi bật xử lý truy vấn và từng tài liệu song song, đưa ra điểm liên quan chính xác. Nó cải thiện đáng kể độ chính xác tìm kiếm, có thể xử lý dữ liệu đa khía cạnh và bán cấu trúc (như bảng và JSON), và hỗ trợ độ dài ngữ cảnh 4k, làm cho nó phù hợp với các tài liệu dài hơn.39 LangChain cung cấp tích hợp trực tiếp với
+CohereRerank.41
+   * ColBERT: Một trình xếp hạng lại đa vector tạo ra một vector cho mỗi token trong tài liệu (nhúng tương tác muộn). Nó nổi tiếng là nhanh và chính xác, và nó có thể giảm thiểu một số vấn đề liên quan đến chiến lược phân đoạn bằng cách cung cấp một cửa sổ ngữ cảnh trượt. Mặc dù nó cung cấp độ chính xác cao hơn so với tìm kiếm vector đơn, nó thường yêu cầu nhiều bộ nhớ hơn và có thể gây ra độ trễ cao hơn do lưu trữ và tính điểm vector trên mỗi token.38 Qdrant hỗ trợ lưu trữ nhúng ColBERT để xếp hạng lại.30
+   * FlashRank: Một thư viện Python siêu nhẹ và siêu nhanh để thêm xếp hạng lại dựa trên các cross-encoder hiện đại.47
+   * RankLLM: Một khung xếp hạng lại linh hoạt hỗ trợ nhiều mô hình xếp hạng khác nhau (listwise, pairwise, pointwise) và được tối ưu hóa cho các tác vụ truy xuất và xếp hạng.48
+ContextualCompressionRetriever của LangChain có thể bao bọc một trình truy xuất cơ sở và sử dụng một trình nén tài liệu (như một trình xếp hạng lại) để nén kết quả được truy xuất, chỉ chuyển nội dung phù hợp nhất đến LLM.48
+Xếp hạng lại là một giai đoạn thứ hai quan trọng để đạt được độ chính xác, đặc biệt sau khi truy xuất ban đầu có khả năng thu hồi cao, tác động trực tiếp đến chất lượng và mức độ liên quan của ngữ cảnh được cung cấp cho LLM. Pipeline truy xuất hiện tại của người dùng có thể thiếu bước xếp hạng lại. Mặc dù tìm kiếm lai (như đã thảo luận ở trên) cải thiện khả năng thu hồi các tài liệu liên quan, nó vẫn có thể trả về một tập hợp kết quả rộng, một số trong đó ít liên quan hơn. Các nguồn tài liệu 37 nhấn mạnh mạnh mẽ rằng xếp hạng lại là "rất quan trọng để cải thiện chất lượng văn bản được tạo ra" 37 và "tăng độ chính xác mà không làm mất đi sự hiểu biết rộng".38 Bằng cách áp dụng một trình xếp hạng lại, hệ thống có thể sắp xếp lại các tài liệu được truy xuất ban đầu, đảm bảo rằng các phân đoạn
+phù hợp nhất và chất lượng cao nhất được trình bày cho LLM. Điều này làm giảm nhiễu trong ngữ cảnh, giảm thiểu việc sử dụng token và trực tiếp dẫn đến các phản hồi chính xác hơn, ngắn gọn hơn và có ngữ cảnh hơn, đây là một khía cạnh quan trọng để cải thiện "hiệu suất."
+Việc lựa chọn trình xếp hạng lại (ví dụ: Cohere, ColBERT, FlashRank) liên quan đến sự đánh đổi giữa độ chính xác, tốc độ và mức tiêu thụ tài nguyên, đòi hỏi phải cân nhắc kỹ lưỡng dựa trên nhu cầu cụ thể của ứng dụng. Nghiên cứu trình bày một số tùy chọn xếp hạng lại 38, mỗi tùy chọn có các đặc điểm riêng biệt. Ví dụ, Cohere Rerank cung cấp độ chính xác cao và độ dài ngữ cảnh lớn 39, trong khi ColBERT mang lại tốc độ nhưng với chi phí lưu trữ và độ trễ tiềm năng cao hơn.43 FlashRank được ghi nhận là siêu nhẹ và nhanh.47 Điều này cho thấy không có một trình xếp hạng lại "tốt nhất" duy nhất; lựa chọn tối ưu phụ thuộc vào các ưu tiên cụ thể của người dùng: liệu đó là độ chính xác tuyệt đối cho các truy vấn quan trọng, hay độ trễ thấp cho các tương tác thời gian thực? Bộ nhớ có phải là một ràng buộc không? Người dùng cần hiểu những sự đánh đổi tinh tế này để chọn một trình xếp hạng lại phù hợp với mục tiêu hiệu suất tổng thể và tài nguyên có sẵn trong môi trường NestJS và Qdrant của họ.
+Bảng 3: So sánh các mô hình xếp hạng lại (Reranking Models)
+Tên Reranker
+	Loại
+	Tính năng chính
+	Ưu điểm
+	Nhược điểm
+	Tích hợp LangChain
+	Hỗ trợ Qdrant
+	Cohere Rerank
+	Cross-encoder
+	Độ dài ngữ cảnh 4k, xử lý dữ liệu bán cấu trúc (bảng, JSON), đa ngôn ngữ (100+ ngôn ngữ).39
+	Độ chính xác cao, cải thiện đáng kể chất lượng tìm kiếm, giảm sử dụng token và độ trễ.39
+	Có thể chậm hơn so với các mô hình multi-vector do xử lý truy vấn và tài liệu cùng lúc.38
+	CohereRerank.41
+	Có thể tích hợp với Qdrant thông qua ContextualCompressionRetriever.49
+	ColBERT
+	Multi-vector / Tương tác muộn
+	Tạo vector cho mỗi token, cửa sổ trượt ngữ cảnh.43
+	Nhanh và chính xác, có thể giảm thiểu vấn đề phân đoạn.43
+	Yêu cầu nhiều bộ nhớ hơn (vector trên mỗi token), độ trễ cao hơn do tính điểm phức tạp.43
+	ColbertRerank (LlamaIndex).44
+	Hỗ trợ lưu trữ nhúng multi-vector, có thể tích hợp cho xếp hạng lại.30
+	FlashRank
+	Cross-encoder
+	Siêu nhẹ, siêu nhanh.47
+	Tốc độ cao, dễ tích hợp vào pipeline tìm kiếm hiện có.47
+	Có thể không đạt được độ chính xác cao nhất so với các mô hình lớn hơn.47
+	Trực tiếp hỗ trợ.47
+	Không có tích hợp Qdrant trực tiếp được đề cập, nhưng có thể sử dụng với ContextualCompressionRetriever.47
+	RankLLM
+	Khung xếp hạng lại linh hoạt (listwise, pairwise, pointwise).48
+	Tối ưu hóa cho các tác vụ truy xuất và xếp hạng, hỗ trợ suy luận hiệu quả.48
+	Linh hoạt, hỗ trợ nhiều mô hình LLM nguồn mở và độc quyền.48
+	Yêu cầu Pyserini, JDK 21, PyTorch, Faiss cho chức năng truy xuất tích hợp.48
+	RankLLM Reranker.48
+	Không có tích hợp Qdrant trực tiếp được đề cập, nhưng có thể sử dụng với ContextualCompressionRetriever.48
+	
+
+2.3. Điều chỉnh hiệu suất Qdrant và các thực hành tốt nhất
+
+
+
+
+2.3.1. Lập chỉ mục HNSW và Lượng tử hóa
+
+
+Qdrant sử dụng chỉ mục dựa trên HNSW (Hierarchical Navigable Small World) để tìm kiếm tương tự nhanh trên các vector dày đặc.51 Các tham số HNSW, đặc biệt là
+m (số cạnh trên mỗi nút), ef_construct (phạm vi xây dựng chỉ mục) và hnsw_ef (hệ số khám phá thời gian tìm kiếm), rất quan trọng để điều chỉnh sự cân bằng giữa độ chính xác tìm kiếm, tốc độ và mức tiêu thụ bộ nhớ.53
+Lượng tử hóa (Scalar và Binary) là một kỹ thuật nén vector, giảm đáng kể việc sử dụng bộ nhớ và tăng tốc các hoạt động tìm kiếm.51 Lượng tử hóa nhị phân, đặc biệt, mang lại hiệu quả bộ nhớ đáng kể và tốc độ truy vấn nhanh hơn, đặc biệt khi kết hợp với rescoring.53 Lưu trữ các vector gốc trên đĩa (
+on_disk: true) có thể giảm việc sử dụng RAM, với Qdrant lưu vào bộ nhớ cache các vector được truy cập thường xuyên trong bộ nhớ.51 Trong quá trình nhập dữ liệu hàng loạt, nên tạm thời tắt lập chỉ mục HNSW bằng cách đặt
+m=0 để giảm áp lực bộ nhớ và CPU, sau đó bật lại sau khi tải lên hoàn tất.51
+Hiệu suất của Qdrant có thể điều chỉnh cao thông qua các tham số HNSW và lượng tử hóa, cung cấp một đòn bẩy quan trọng để cân bằng tốc độ, độ chính xác và dung lượng bộ nhớ. Mối quan tâm chính của người dùng là "hiệu suất không tốt", và Qdrant là cơ sở dữ liệu vector được lựa chọn. Các nguồn tài liệu 51 cung cấp nhiều thông tin về cơ chế tối ưu hóa nội bộ của Qdrant. Các tham số HNSW (
+m, ef_construct, hnsw_ef) trực tiếp kiểm soát sự đánh đổi giữa độ chính xác và tốc độ tìm kiếm. Quan trọng hơn, các kỹ thuật lượng tử hóa (Scalar, Binary) mang lại khả năng tiết kiệm bộ nhớ và tăng tốc truy vấn đáng kể, điều này rất quan trọng để quản lý các tập dữ liệu lớn và đạt được độ trễ thấp. Điều này cho thấy thiết lập Qdrant hiện tại của người dùng có thể đang hoạt động với các cấu hình mặc định hoặc không tối ưu. Bằng cách điều chỉnh chiến lược các tham số này, người dùng có thể điều chỉnh hành vi của Qdrant theo khối lượng công việc cụ thể của họ, cho dù đó là ưu tiên độ trễ cực thấp cho các truy vấn thời gian thực hay tối ưu hóa để lưu trữ hiệu quả về chi phí, trực tiếp giải quyết các vấn đề hiệu suất của họ.
+Sử dụng chiến lược lưu trữ trên đĩa và vô hiệu hóa HNSW trong quá trình tải lên hàng loạt có thể quản lý đáng kể áp lực bộ nhớ và cải thiện hiệu quả nhập dữ liệu cho RAG đa tệp. Đối với một dịch vụ RAG "đa tệp", pipeline nhập dữ liệu sẽ liên quan đến việc xử lý và lập chỉ mục một lượng lớn dữ liệu tiềm năng. Các nguồn tài liệu 51 cung cấp các chiến lược thực tế để tối ưu hóa quy trình này. Việc lưu trữ các vector
+on_disk 51 ngay lập tức giảm mức tiêu thụ RAM. Quan trọng hơn, việc tạm thời vô hiệu hóa lập chỉ mục HNSW (
+m=0) trong quá trình nhập dữ liệu hàng loạt 51 ngăn hệ thống tiêu tốn đáng kể tài nguyên CPU và bộ nhớ vào việc liên tục xây dựng lại chỉ mục khi dữ liệu mới đến. Sau khi tải lên hàng loạt, việc bật lại HNSW cho phép trình tối ưu hóa xây dựng một chỉ mục hiệu quả hơn trong một lần. Việc hiểu sâu về hoạt động này là rất quan trọng để duy trì hiệu suất ổn định trong quá trình nhập dữ liệu, ngăn chặn tình trạng chậm hệ thống hoặc sự cố do quá tải bộ nhớ và đảm bảo rằng hệ thống RAG vẫn phản hồi ngay cả trong thời gian lập chỉ mục nặng.
+
+
+2.3.2. Lập chỉ mục Payload và Lọc siêu dữ liệu
+
+
+Qdrant cho phép lưu trữ dữ liệu JSON tùy ý (payload) cùng với các vector.59 Lập chỉ mục payload được thiết kế đặc biệt để tối ưu hóa các hoạt động lọc dựa trên siêu dữ liệu này, cho phép lọc nhanh chóng theo các điều kiện cụ thể.59 Thực hiện tìm kiếm với bộ lọc mà không có chỉ mục payload tương ứng có thể làm giảm đáng kể hiệu suất, vì Qdrant sẽ phải tải toàn bộ dữ liệu payload từ đĩa để đánh giá các điều kiện.60 Tham số
+filter trong các phương thức tìm kiếm của Qdrant hỗ trợ MetadataFilter để lọc chính xác theo các trường và phạm vi cụ thể (ví dụ: phạm vi ngày, giá trị phân loại).64 Nên tạo chỉ mục trên các trường có khả năng hạn chế kết quả tìm kiếm nhất.66
+Tận dụng lập chỉ mục payload và lọc siêu dữ liệu của Qdrant là điều cần thiết cho RAG đa tài liệu hiệu quả, cho phép truy xuất ngữ cảnh chính xác vượt ra ngoài sự tương đồng ngữ nghĩa thuần túy. Một dịch vụ RAG "đa tệp" ngụ ý việc quản lý một kho tài liệu tiềm năng lớn và đa dạng, có thể từ các nguồn khác nhau hoặc thuộc về những người dùng khác nhau (như trong NotebookLM). Các nguồn tài liệu 59 làm nổi bật rằng Qdrant không chỉ lưu trữ các payload JSON phong phú mà còn, quan trọng hơn, cho phép lập chỉ mục trên các trường payload này. Nếu không có chỉ mục payload, các hoạt động lọc có thể trở nên "rất chậm".63 Bằng cách lập chỉ mục chiến lược các trường siêu dữ liệu liên quan, người dùng có thể thực hiện các tìm kiếm có độ chính xác cao (ví dụ: "tìm thông tin về X, nhưng chỉ từ các tài liệu được xuất bản sau ngày Y và từ tác giả Z"), cải thiện đáng kể hiệu quả và độ chính xác truy xuất bằng cách thu hẹp không gian tìm kiếm trước hoặc trong quá trình tìm kiếm tương tự vector. Đây là một tối ưu hóa trực tiếp, thực tế cho RAG đa tài liệu.
+
+
+2.3.3. Các chiến lược đa tập hợp để mở rộng quy mô
+
+
+Qdrant hỗ trợ các tính năng tổ chức dữ liệu nâng cao như đa người thuê (multitenancy) và phân mảnh (sharding), rất quan trọng để quản lý các tập dữ liệu lớn và khối lượng lớn dữ liệu cụ thể của người dùng trong các hệ thống có thể mở rộng.53
+      * Đa người thuê: Qdrant cho phép cô lập logic dữ liệu cho các người thuê khác nhau (ví dụ: người dùng cá nhân hoặc danh mục tài liệu) trong cùng một bộ sưu tập, giảm chi phí so với việc duy trì các bộ sưu tập riêng biệt.53 Ngoài ra, có thể sử dụng các bộ sưu tập riêng biệt để cô lập nghiêm ngặt.66 Các phiên bản mới nhất của Qdrant cho phép lưu trữ nhiều vector trên mỗi đối tượng trong một bộ sưu tập duy nhất, loại bỏ nhu cầu về các bộ sưu tập riêng biệt cho từng loại vector (ví dụ: một cho nhúng văn bản, một cho nhúng hình ảnh, một cho nhúng tóm tắt).25
+      * Phân mảnh: Các bộ sưu tập có thể được chia thành các đơn vị nhỏ hơn (phân mảnh) và phân phối trên nhiều nút, cho phép mở rộng quy mô theo chiều ngang và cải thiện xử lý truy vấn song song.53
+Một khuyến nghị là hợp nhất các người thuê vào một bộ sưu tập duy nhất nếu có thể, sử dụng lọc payload (ví dụ: gắn thẻ bằng tenant_id) để cô lập logic.60
+Đối với một RAG đa tệp, đặc biệt với các loại tài liệu đa dạng hoặc dữ liệu cụ thể của người dùng, các tính năng đa vector trên mỗi đối tượng và đa người thuê của Qdrant cung cấp khả năng tổ chức dữ liệu linh hoạt và có thể mở rộng. Dịch vụ RAG "đa tệp" của người dùng ngụ ý xử lý một kho tài liệu tiềm năng lớn và đa dạng, có thể từ các nguồn khác nhau hoặc thuộc về những người dùng khác nhau (như trong NotebookLM). Các nguồn tài liệu 25 cung cấp các tính năng Qdrant nâng cao trực tiếp giải quyết các thách thức về khả năng mở rộng và quản lý dữ liệu này. Khả năng lưu trữ "nhiều vector trên mỗi đối tượng" trong một bộ sưu tập duy nhất 25 rất có giá trị cho một RAG đa phương thức. Ví dụ, một phân đoạn tài liệu duy nhất có thể có nhúng dày đặc cho văn bản của nó, nhúng thưa cho từ khóa và một nhúng khác cho nội dung tóm tắt của nó, tất cả đều liên kết với cùng một đơn vị logic. Điều này loại bỏ sự phức tạp và chi phí quản lý nhiều bộ sưu tập cho các loại vector khác nhau. Hơn nữa, các tính năng đa người thuê của Qdrant 53 rất quan trọng để cô lập dữ liệu người dùng trong một dịch vụ đa người dùng, đảm bảo quyền riêng tư dữ liệu và truy vấn hiệu quả trong một cơ sở hạ tầng được chia sẻ. Những khả năng này là các yếu tố hỗ trợ chính để xây dựng một dịch vụ RAG đa tệp mạnh mẽ và có thể mở rộng.
+Bảng 4: Các thông số tối ưu hóa hiệu suất Qdrant
+Danh mục tham số
+	Tên tham số
+	Mô tả
+	Tác động đến hiệu suất
+	Giá trị/Chiến lược khuyến nghị
+	Lập chỉ mục HNSW
+	m
+	Số cạnh tối đa trên mỗi nút trong biểu đồ HNSW.
+	Giá trị cao hơn = độ chính xác cao hơn nhưng bộ nhớ và thời gian xây dựng chỉ mục lớn hơn.53
+	12-16 cho hầu hết các trường hợp sử dụng.56 Đặt
+	m=0 để vô hiệu hóa lập chỉ mục trong quá trình nhập dữ liệu hàng loạt.51
+	
+
+	ef_construct
+	Số lượng hàng xóm được xem xét trong quá trình xây dựng chỉ mục.
+	Giá trị lớn hơn = chất lượng chỉ mục tốt hơn nhưng thời gian xây dựng chậm hơn.53
+	100-200.56
+	
+
+	hnsw_ef
+	Số lượng hàng xóm được đánh giá trong quá trình truy vấn tìm kiếm.
+	Giá trị cao hơn = độ chính xác tốt hơn nhưng tốc độ chậm hơn.53
+	50-500.56
+	Lượng tử hóa
+	quantization_config (type, always_ram)
+	Nén vector (ví dụ: int8 cho Scalar, Binary) để giảm bộ nhớ và tăng tốc tìm kiếm. always_ram giữ vector lượng tử hóa trong RAM.51
+	Giảm đáng kể việc sử dụng bộ nhớ, tăng tốc tìm kiếm, đặc biệt với rescoring.53
+	Scalar quantization là lựa chọn ưu tiên; Binary quantization với rescoring cho hiệu suất tốt nhất.53
+	Cấu hình lưu trữ
+	on_disk
+	Lưu trữ các vector gốc trên đĩa thay vì trong RAM.
+	Giảm đáng kể mức tiêu thụ RAM, nhưng có thể tăng độ trễ tìm kiếm nếu đĩa chậm.51
+	true để giảm RAM, với Qdrant tự động lưu vào bộ nhớ cache các vector thường xuyên truy cập.59
+	
+
+	on_disk_payload
+	Lưu trữ payload trên đĩa.
+	Giảm mức tiêu thụ RAM của payload.56
+	true để giảm RAM.56
+	Tối ưu hóa truy vấn
+	limit
+	Số lượng kết quả được yêu cầu.
+	Yêu cầu quá nhiều kết quả có thể làm chậm truy vấn.56
+	Chỉ yêu cầu số lượng kết quả cần thiết.56
+	
+
+	exact
+	Buộc tìm kiếm chính xác thay vì tìm kiếm xấp xỉ (ANN).
+	Chính xác hơn nhưng chậm hơn đáng kể.54
+	Chỉ đặt true khi độ chính xác hoàn hảo là rất quan trọng.56
+	Lập chỉ mục Payload
+	Lập chỉ mục payload (tạo chỉ mục trên các trường payload cụ thể)
+	Tối ưu hóa các hoạt động lọc dựa trên siêu dữ liệu.59
+	Cải thiện đáng kể hiệu suất truy vấn khi sử dụng bộ lọc; tránh tải toàn bộ payload từ đĩa.60
+	Tạo chỉ mục trên tất cả các trường được sử dụng trong bộ lọc hoặc sắp xếp, đặc biệt là các trường có tính ràng buộc cao.60
+	
+
+2.4. Đánh giá hiệu suất nhúng Gemini cho tiếng Việt
+
+
+Người dùng hiện đang sử dụng nhúng Gemini. Gemini 1.5 đã thể hiện hiệu suất mạnh mẽ trong việc tạo lại câu tiếng Việt, vượt trội so với nỗ lực của con người ở một số chỉ số nhất định (điểm BLEU-4), cho thấy khả năng hiểu ngôn ngữ mạnh mẽ.67
+Mặc dù tầm quan trọng của các hệ thống truy xuất đối với LLM ở Việt Nam, có một hạn chế được công nhận về số lượng các điểm chuẩn hiện có dành riêng cho các tác vụ truy xuất và xếp hạng lại tiếng Việt. Điều này gây khó khăn trong việc đánh giá và so sánh chính xác hiệu suất của các mô hình ngôn ngữ nhúng tiếng Việt khác nhau trong ngữ cảnh RAG.68 Một điểm chuẩn mới, Vietnamese Context Search (VCS), đã được giới thiệu để giải quyết khoảng trống này, được thiết kế để đánh giá các mô hình nhúng văn bản tiếng Việt trong các tác vụ truy xuất và xếp hạng lại.68
+Các mô hình nhúng tiếng Việt chuyên biệt tồn tại trên Hugging Face, chẳng hạn như dangvantuan/vietnamese-embedding (dành cho câu) và dangvantuan/vietnamese-document-embedding (dành cho văn bản dài lên đến 8096 token). Các mô hình này được xây dựng dựa trên PhoBERT và được đào tạo bằng các kỹ thuật học tương phản tiên tiến.72 Các hệ thống RAG rất quan trọng để giảm thiểu ảo giác của LLM bằng cách cung cấp ngữ cảnh bên ngoài, có thể xác minh được.69
+Mặc dù Gemini thể hiện hiệu suất mạnh mẽ trong việc hiểu tiếng Việt (ví dụ: tạo lại câu), hiệu suất cụ thể của nó với tư cách là một mô hình nhúng cho truy xuất RAG tiếng Việt cần được xác thực thực nghiệm do có ít điểm chuẩn công khai. Người dùng đã nêu rõ rằng họ đang sử dụng "Gemini embedding." Mặc dù các nguồn tài liệu 67 chỉ ra hiệu suất ấn tượng của Gemini trong việc tạo lại câu tiếng Việt, một chỉ số về khả năng hiểu ngôn ngữ, điều này không trực tiếp chuyển thành hiệu suất tối ưu cho
+truy xuất trong hệ thống RAG. Các nguồn tài liệu 68 liên tục nhấn mạnh "sự thiếu hụt các điểm chuẩn tiếng Việt cho các tác vụ truy xuất và xếp hạng lại," gây khó khăn trong việc so sánh dứt khoát các mô hình nhúng tiếng Việt. Điều này ngụ ý rằng vấn đề "hiệu suất không tốt" hiện tại của người dùng có thể xuất phát từ hiệu quả của mô hình nhúng trong việc truy xuất các phân đoạn tiếng Việt có liên quan. Do đó, việc chỉ dựa vào Gemini mà không xác thực thực nghiệm cho các tác vụ truy xuất cụ thể cho dữ liệu của họ có thể là một lựa chọn không tối ưu. Điều này đòi hỏi việc đánh giá nội bộ hoặc xem xét các lựa chọn thay thế.
+Các mô hình nhúng tiếng Việt chuyên biệt tồn tại (ví dụ: dangvantuan/vietnamese-embedding), mang lại hiệu suất tốt hơn tiềm năng cho RAG tiếng Việt chuyên biệt theo lĩnh vực hoặc văn bản dài, và nên được đánh giá so với Gemini. Xem xét các hạn chế về điểm chuẩn truy xuất cụ thể cho Gemini trong tiếng Việt, việc khám phá các mô hình được xây dựng có mục đích là một bước hợp lý tiếp theo để giải quyết hiệu suất. Các nguồn tài liệu 72 giới thiệu
+dangvantuan/vietnamese-embedding và dangvantuan/vietnamese-document-embedding, được đào tạo rõ ràng cho các tác vụ ngôn ngữ tiếng Việt, bao gồm nhúng văn bản dài (lên đến 8096 token cho mô hình tài liệu). Các mô hình chuyên biệt này có thể nắm bắt các sắc thái của văn bản tiếng Việt hiệu quả hơn cho mục đích truy xuất so với một mô hình đa năng như Gemini. Điều này ngụ ý rằng người dùng nên tiến hành đánh giá so sánh bằng cách sử dụng tập dữ liệu và truy vấn của riêng họ để xác định xem các mô hình chuyên biệt này có mang lại cải thiện hiệu suất đáng kể so với nhúng Gemini hiện tại của họ hay không, trực tiếp góp phần giải quyết vấn đề "hiệu suất không tốt."
+
+
+3. Triển khai các tính năng nâng cao tương tự NotebookLM
+
+
+
+
+3.1. Tạo sơ đồ tư duy từ tài liệu
+
+
+
+
+3.1.1. Trích xuất thực thể và mối quan hệ dựa trên LLM
+
+
+NotebookLM tạo sơ đồ tư duy bằng cách sử dụng LLM của Google Gemini để phân tích văn bản, xác định các khái niệm, chủ đề quan trọng và cách chúng liên quan, tập trung vào thông tin dựa trên nguồn của người dùng.74 Các mô hình ngôn ngữ lớn (LLM) có thể tự động hóa việc tạo biểu đồ tri thức (KG) từ văn bản phi cấu trúc bằng cách xác định các thực thể, hiểu các mối quan hệ của chúng và biểu diễn chúng trong cấu trúc biểu đồ.75 Một cách tiếp cận LLM đa giai đoạn để trích xuất KG bao gồm: (1) trích xuất thực thể và mối quan hệ từ mỗi văn bản nguồn, (2) tổng hợp biểu đồ trên các nguồn và (3) nhóm các thực thể và mối quan hệ một cách lặp đi lặp lại.77
+LangChain cung cấp các công cụ như LLMGraphTransformer, cho phép các nhà phát triển chỉ định các loại nút và loại mối quan hệ được phép (ví dụ: "Person", "Title", "Group", "TITLE", "COLLABORATES", "GROUP") để hướng dẫn quy trình trích xuất của LLM, giúp việc biểu diễn tri thức tốt hơn.75 Việc nhắc lệnh vài lần (few-shot prompting) có thể được sử dụng để điều hướng hành vi của LLM và cải thiện chất lượng trích xuất bằng cách cung cấp các ví dụ về cặp đầu vào-đầu ra mong muốn.78 Các thách thức bao gồm việc LLM quá cứng nhắc trong việc giải thích các mối quan hệ và khả năng thiếu trách nhiệm đối với thông tin được trích xuất, có nghĩa là chất lượng dữ liệu của KG thu được có thể thấp hơn so với các KG được con người quản lý.76
+Việc tạo sơ đồ tư duy có thể được coi là một vấn đề trích xuất biểu đồ tri thức, tận dụng LLM để xác định các thực thể và mối quan hệ từ các phân đoạn tài liệu. Yêu cầu của người dùng về việc tạo "sơ đồ tư duy", lấy NotebookLM làm ví dụ. Các nguồn tài liệu 74 nói rằng NotebookLM sử dụng Gemini để "phân tích văn bản để xác định các khái niệm, chủ đề quan trọng và cách chúng liên quan." Mô tả này hoàn toàn phù hợp với nhiệm vụ cơ bản của việc trích xuất biểu đồ tri thức (KG), liên quan đến việc xác định các thực thể (nút) và mối quan hệ của chúng (cạnh) trong một văn bản. Các nguồn tài liệu 75 tiếp tục xác nhận rằng LLM có khả năng tự động hóa quy trình này từ văn bản phi cấu trúc.
+LLMGraphTransformer của LangChain 75 cung cấp một giao diện lập trình trực tiếp cho việc này. Bằng cách khái niệm hóa việc tạo sơ đồ tư duy là trích xuất KG, người dùng có được một cách tiếp cận kỹ thuật rõ ràng, có cấu trúc để triển khai tính năng này, chuyển từ một ý tưởng cấp cao sang một nhiệm vụ kỹ thuật cụ thể.
+Kiểm soát chi tiết quá trình trích xuất của LLM (ví dụ: định nghĩa lược đồ, ví dụ few-shot, xử lý đa giai đoạn) là rất quan trọng để đảm bảo độ chính xác và tính nhất quán trong cấu trúc sơ đồ tư duy được tạo ra. Mặc dù LLM rất mạnh mẽ cho việc trích xuất KG, các nguồn tài liệu 76 chỉ ra những cạm bẫy tiềm ẩn: LLM có thể "khá cứng nhắc" 76, và đầu ra của chúng có thể thiếu tính nhất quán hoặc trách nhiệm. Để khắc phục những điều này, nghiên cứu đề xuất một số kỹ thuật kỹ thuật nhắc lệnh và xử lý nâng cao. Việc xác định các loại nút và mối quan hệ được phép 75 giới hạn đầu ra của LLM theo một lược đồ được xác định trước. Sử dụng nhắc lệnh vài lần 78 cung cấp các ví dụ cụ thể về các mẫu trích xuất mong muốn, hướng dẫn LLM. Cách tiếp cận đa giai đoạn 77 (ví dụ: các bước riêng biệt để trích xuất thực thể, trích xuất mối quan hệ và phân cụm) cho phép tinh chỉnh và xác thực lặp đi lặp lại. Điều này ngụ ý rằng một cách tiếp cận đơn giản, nhắc lệnh đơn lẻ để tạo sơ đồ tư duy có thể sẽ mang lại kết quả không tối ưu. Thay vào đó, một quy trình được thiết kế cẩn thận với hướng dẫn lược đồ rõ ràng và tinh chỉnh lặp đi lặp lại là cần thiết để tạo ra sơ đồ tư duy chất lượng cao, có thể sử dụng được.
+
+
+3.1.2. Đầu ra có cấu trúc cho biểu diễn đồ thị
+
+
+Phương thức .with_structured_output() của LangChain được thiết kế để chuyển đổi phản hồi của LLM từ văn bản thô thành các đối tượng có cấu trúc như từ điển, danh sách hoặc các lớp tùy chỉnh.79 Điều này loại bỏ nhu cầu phân tích hoặc xác thực thủ công. Các mô hình Pydantic rất được khuyến nghị để định nghĩa lược đồ cho đầu ra có cấu trúc do các tính năng xác thực dữ liệu và an toàn kiểu mạnh mẽ của chúng.79 Chúng đảm bảo đầu ra của LLM tuân thủ chặt chẽ một cấu trúc được xác định trước và báo lỗi nếu không. LLM có thể được hướng dẫn để trả về các đối tượng JSON, và
+with_structured_output của LangChain có thể xử lý điều này bằng cách liên kết lược đồ và phân tích đầu ra.79 Đầu ra chế độ JSON từ các trình phân tích PDF nâng cao như LlamaParse có thể cung cấp cấu trúc tài liệu hoàn chỉnh, bao gồm siêu dữ liệu hình ảnh và bảng, có thể được tận dụng để biểu diễn đồ thị.21
+with_structured_output của LangChain và các mô hình Pydantic là lý tưởng để thực thi một lược đồ nhất quán, có thể đọc được bằng máy cho dữ liệu sơ đồ tư duy được trích xuất bởi LLM. Để hiển thị sơ đồ tư duy hoặc lưu trữ nó trong cơ sở dữ liệu đồ thị, các thực thể và mối quan hệ được trích xuất phải ở định dạng được xác định rõ ràng, có cấu trúc. Đầu ra văn bản thô từ LLM là không đủ. Các nguồn tài liệu 79 liên tục nhấn mạnh phương thức
+with_structured_output của LangChain, đặc biệt khi kết hợp với các mô hình Pydantic, như giải pháp mạnh mẽ cho việc này. Khả năng định nghĩa và xác thực lược đồ của Pydantic đảm bảo rằng đầu ra của LLM trực tiếp tuân thủ cấu trúc dữ liệu mong muốn (ví dụ: danh sách các nút có thuộc tính và danh sách các cạnh có nguồn, đích và loại). Điều này đảm bảo rằng dữ liệu sơ đồ tư duy được định dạng nhất quán, có thể sử dụng được bằng máy và sẵn sàng tích hợp với các thư viện trực quan hóa đồ thị hoặc cơ sở dữ liệu trong ứng dụng NestJS.
+
+
+3.2. Tạo câu đố động
+
+
+
+
+3.2.1. Tự động tạo câu hỏi và câu trả lời sai
+
+
+Các mô hình ngôn ngữ lớn (LLM) mang lại giải pháp đầy hứa hẹn để tự động hóa việc tạo câu hỏi trắc nghiệm (MCQ), vốn theo truyền thống đòi hỏi nhiều thời gian và nỗ lực nhận thức từ các nhà giáo dục.86 LangChain cung cấp
+QAGenerationChain.87 Quy trình tạo MCQ tự động thường bao gồm nhiều giai đoạn: (1) tiền xử lý văn bản, (2) chọn câu phù hợp, (3) xác định khóa (câu trả lời đúng), (4) tạo câu hỏi, (5) chọn các câu trả lời sai (các tùy chọn không đúng) và (6) hậu xử lý.86 LLM có khả năng tự động thực hiện tất cả các bước này mà không cần đào tạo bổ sung.86 Các kỹ thuật kỹ thuật nhắc lệnh như nhắc lệnh dựa trên vai trò, sử dụng bảng thuật ngữ, nhắc lệnh một lần và chuỗi suy nghĩ có thể được sử dụng để tạo câu hỏi.88 Chất lượng của MCQ phụ thuộc nhiều vào chất lượng của các câu trả lời sai.86 LLM cũng có thể tạo các câu hỏi trả lời ngắn gọn, độc lập.89
+
+
+3.2.2. Đầu ra có cấu trúc cho định dạng câu đố
+
+
+Việc sử dụng with_structured_output là cần thiết để tạo các định dạng câu đố nhất quán, chẳng hạn như các đối tượng JSON hoặc mô hình Pydantic cho câu hỏi, câu trả lời và các câu trả lời sai.79
+PydanticOutputParser đặc biệt hữu ích cho các cấu trúc phức tạp.83
+
+
+3.2.3. Đánh giá câu đố được tạo
+
+
+Các chỉ số để đánh giá chất lượng câu hỏi do LLM tạo ra bao gồm độ chính xác về mặt thực tế, tính gắn kết, hiểu ngữ cảnh, mức độ liên quan, tính nền tảng và sự hiện diện của ảo giác.93 Mô hình "LLM-as-a-judge" có thể được sử dụng để đánh giá chất lượng đối thoại, mặc dù có những hạn chế đã biết.93
+QAG Scorer được đề xuất để đánh giá các chỉ số RAG.94 Việc tạo câu hỏi đúng/sai và tự xác minh cũng là những phương pháp có thể được khám phá.96 LangChain cung cấp một khung đánh giá để định nghĩa các chỉ số và chạy thử nghiệm.98
+
+
+3.3. Tạo podcast âm thanh hai người
+
+
+
+
+3.3.1. Tạo kịch bản dựa trên LLM cho nhiều người nói
+
+
+LLM có thể tạo kịch bản podcast đàm thoại, bao gồm cả kịch bản cho hai người dẫn chương trình.99 Điều quan trọng là phải sử dụng các lời nhắc mạnh mẽ, chỉnh sửa để đảm bảo luồng và lời nói tự nhiên, và tinh chỉnh giọng điệu và nhịp độ.99 Nhắc lệnh dựa trên vai trò có thể được áp dụng cho LLM.88 Kịch bản có thể được tạo dưới dạng đầu ra JSON với các trường
+speaker, voiceId và text.100 LLM cũng có thể mô phỏng các cuộc hội thoại đa lượt.95
+
+
+3.3.2. Tích hợp chuyển văn bản thành giọng nói (TTS) cho tiếng Việt
+
+
+LangChain đóng vai trò là một công cụ điều phối để tích hợp với các dịch vụ TTS bên ngoài.104 Có nhiều dịch vụ TTS hỗ trợ tiếng Việt, bao gồm Fliki 106, TTSMaker 107, PlayHT 108, Kapwing (ElevenLabs) 110, Amazon Polly 111, FPT.AI 113 và Viettel AI.115 Các dịch vụ này cung cấp giọng nói chân thực, tự nhiên, hỗ trợ các giọng vùng miền và các tùy chọn tùy chỉnh (giọng điệu, cao độ, tốc độ, tạm dừng).106 Việc sử dụng nhiều giọng AI trong cùng một tập podcast là khả thi để mô phỏng các cuộc phỏng vấn hoặc chương trình có nhiều người nói.100 Đồng bộ hóa âm thanh là cần thiết để đảm bảo phát lại mượt mà.100
+
+
+4. Kết luận và khuyến nghị
+
+
+Để nâng cao hiệu suất đáng kể cho dịch vụ RAG đa tệp và triển khai các tính năng nâng cao tương tự NotebookLM, cần có một cách tiếp cận đa diện và có hệ thống.
+Đối với hiệu suất RAG:
+      * Tối ưu hóa phân đoạn tài liệu: Người dùng nên tiến hành thử nghiệm thực nghiệm với các chiến lược phân đoạn khác nhau của LangChain, bao gồm phân đoạn đệ quy, ngữ nghĩa và dựa trên cấu trúc tài liệu. Việc điều chỉnh kích thước phân đoạn (thường từ 128-512 token) và mức độ chồng chéo là rất quan trọng để cân bằng giữa việc giữ lại ngữ cảnh và hiệu quả tính toán.
+      * Xử lý PDF nâng cao: Việc chuyển từ trích xuất PDF cơ bản sang các công cụ phân tích nâng cao như LlamaParse hoặc PyMuPDFLoader là điều cần thiết. Các công cụ này có thể trích xuất các biểu diễn có cấu trúc của bảng, hình ảnh và phương trình (ví dụ: JSON, Markdown), cho phép LLM xử lý thông tin phức tạp này hiệu quả hơn.
+      * Triển khai tìm kiếm lai: Hệ thống nên tích hợp tìm kiếm lai, kết hợp tìm kiếm tương tự vector (truy xuất dày đặc) với tìm kiếm dựa trên từ khóa (ví dụ: BM25). Qdrant hỗ trợ tính năng này một cách tự nhiên, cho phép thu hồi toàn diện hơn bằng cách nắm bắt cả ý nghĩa ngữ nghĩa và các từ khóa khớp chính xác.
+      * Sử dụng xếp hạng lại sau truy xuất: Để tinh chỉnh độ chính xác của các tài liệu được truy xuất, việc tích hợp một trình xếp hạng lại là rất quan trọng. Các lựa chọn như Cohere Rerank hoặc ColBERT có thể sắp xếp lại các kết quả ban đầu, đảm bảo rằng các phân đoạn phù hợp nhất được cung cấp cho LLM, giảm nhiễu và cải thiện chất lượng phản hồi. Việc lựa chọn trình xếp hạng lại nên dựa trên sự cân bằng giữa độ chính xác, tốc độ và tài nguyên có sẵn.
+      * Điều chỉnh Qdrant chuyên sâu: Tối ưu hóa hiệu suất Qdrant là một đòn bẩy quan trọng. Điều chỉnh các tham số HNSW (m, ef_construct, hnsw_ef) để phù hợp với yêu cầu về tốc độ và độ chính xác của ứng dụng. Việc triển khai lượng tử hóa (Scalar hoặc Binary) có thể giảm đáng kể việc sử dụng bộ nhớ và tăng tốc các truy vấn. Trong quá trình nhập dữ liệu hàng loạt, việc lưu trữ vector trên đĩa và tạm thời vô hiệu hóa lập chỉ mục HNSW có thể quản lý áp lực bộ nhớ.
+      * Tận dụng lập chỉ mục payload: Để truy xuất hiệu quả trong môi trường đa tài liệu, việc lập chỉ mục các trường siêu dữ liệu liên quan trong Qdrant là điều cần thiết. Điều này cho phép lọc chính xác dựa trên các thuộc tính tài liệu (ví dụ: ngày, loại, nguồn), cải thiện đáng kể hiệu quả truy vấn.
+      * Chiến lược tổ chức dữ liệu Qdrant: Đối với dịch vụ đa tệp, người dùng nên khám phá các tính năng đa vector trên mỗi đối tượng của Qdrant (lưu trữ các loại nhúng khác nhau cho cùng một đối tượng trong một bộ sưu tập) và các khả năng đa người thuê để tổ chức dữ liệu linh hoạt và có thể mở rộng.
+      * Đánh giá nhúng tiếng Việt: Mặc dù Gemini thể hiện khả năng hiểu tiếng Việt mạnh mẽ, hiệu suất của nó với tư cách là một mô hình nhúng cho truy xuất RAG tiếng Việt cần được xác thực thực nghiệm. Người dùng nên tiến hành đánh giá nội bộ, so sánh Gemini với các mô hình nhúng tiếng Việt chuyên biệt (ví dụ: dangvantuan/vietnamese-embedding) để xác định lựa chọn tối ưu cho dữ liệu và trường hợp sử dụng cụ thể của họ.
+Đối với các tính năng nâng cao tương tự NotebookLM:
+      * Tạo sơ đồ tư duy: Tính năng này có thể được triển khai bằng cách sử dụng LLM để trích xuất biểu đồ tri thức từ tài liệu. LangChain's LLMGraphTransformer có thể được sử dụng để hướng dẫn quá trình trích xuất thực thể và mối quan hệ. Điều quan trọng là phải sử dụng with_structured_output của LangChain với các mô hình Pydantic để đảm bảo đầu ra có cấu trúc và có thể đọc được bằng máy cho biểu diễn đồ thị.
+      * Tạo câu đố: LLM có thể tự động tạo câu hỏi (trắc nghiệm, trả lời ngắn) và các câu trả lời sai. Các kỹ thuật kỹ thuật nhắc lệnh tiên tiến và đầu ra có cấu trúc (sử dụng Pydantic models hoặc JSON) sẽ đảm bảo chất lượng và định dạng của câu đố. Việc thiết lập một khung đánh giá để đo lường độ chính xác, tính gắn kết và mức độ liên quan của các câu hỏi được tạo là rất quan trọng.
+      * Tạo podcast hai người: LLM có thể tạo kịch bản podcast đàm thoại cho nhiều người nói. Việc thiết kế lời nhắc mạnh mẽ và tinh chỉnh đầu ra để có luồng tự nhiên, giọng điệu phù hợp và nhịp độ là điều cần thiết. Sau đó, kịch bản có thể được chuyển đổi thành âm thanh bằng cách tích hợp với các dịch vụ chuyển văn bản thành giọng nói (TTS) tiếng Việt hiện có, hỗ trợ nhiều giọng nói và tùy chỉnh.
+Khuyến nghị chung:
+      * Phát triển lặp đi lặp lại và đánh giá liên tục: Triển khai các cải tiến theo từng giai đoạn, liên tục đánh giá hiệu suất của hệ thống và chất lượng của nội dung được tạo ra.
+      * Giám sát chặt chẽ: Theo dõi các chỉ số hiệu suất chính như độ trễ, độ chính xác truy xuất, mức tiêu thụ tài nguyên (CPU, RAM, I/O đĩa) và chi phí token.
+      * Cân bằng sự đánh đổi: Luôn cân nhắc sự đánh đổi giữa độ phức tạp của việc triển khai, chi phí tính toán và chất lượng mong muốn của từng tính năng.
+Bằng cách áp dụng các khuyến nghị này, hệ thống RAG đa tệp của người dùng có thể đạt được hiệu suất được cải thiện đáng kể và thành công trong việc triển khai các tính năng nâng cao, mang lại trải nghiệm người dùng phong phú và tương tác.
+Works cited
+      1. A New HOPE: Domain-agnostic Automatic Evaluation of Text Chunking - arXiv, accessed June 16, 2025, http://arxiv.org/pdf/2505.02171
+      2. Chunking strategies for RAG tutorial using Granite - IBM, accessed June 16, 2025, https://www.ibm.com/think/tutorials/chunking-strategies-for-rag-with-langchain-watsonx-ai
+      3. What is the optimal chunk size for RAG applications? - Milvus, accessed June 16, 2025, https://milvus.io/ai-quick-reference/what-is-the-optimal-chunk-size-for-rag-applications
+      4. Chunking for RAG: Maximize enterprise knowledge retrieval - Cohere, accessed June 16, 2025, https://cohere.com/blog/chunking-for-rag-maximize-enterprise-knowledge-retrieval
+      5. Langchain: Document Splitting - DEV Community, accessed June 16, 2025, https://dev.to/rutamstwt/langchain-document-splitting-21im
+      6. How to Chunk Documents for RAG - Multimodal, accessed June 16, 2025, https://www.multimodal.dev/post/how-to-chunk-documents-for-rag
+      7. Mastering Chunking Strategies for RAG: Best Practices & Code Examples - Databricks Community, accessed June 16, 2025, https://community.databricks.com/t5/technical-blog/the-ultimate-guide-to-chunking-strategies-for-rag-applications/ba-p/113089
+      8. Text splitters | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/concepts/text_splitters/
+      9. 7 Ways to Split Data Using LangChain Text Splitters - Analytics Vidhya, accessed June 16, 2025, https://www.analyticsvidhya.com/blog/2024/07/langchain-text-splitters/
+      10. How to recursively split text by characters | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/how_to/recursive_text_splitter/
+      11. Using Recursive splitter what will be the priority to the chunking? #16258 - GitHub, accessed June 16, 2025, https://github.com/langchain-ai/langchain/discussions/16258
+      12. 02. RecursiveCharacterTextSplitter | LangChain OpenTutorial - GitBook, accessed June 16, 2025, https://langchain-opentutorial.gitbook.io/langchain-opentutorial/07-textsplitter/02-recursivecharactertextsplitter
+      13. RecursiveCharacterTextSplitter — LangChain documentation, accessed June 16, 2025, https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.RecursiveCharacterTextSplitter.html
+      14. A Guide to Chunking Strategies for Retrieval Augmented Generation (RAG) - Sagacify, accessed June 16, 2025, https://www.sagacify.com/news/a-guide-to-chunking-strategies-for-retrieval-augmented-generation-rag
+      15. [2410.13070] Is Semantic Chunking Worth the Computational Cost? - arXiv, accessed June 16, 2025, https://arxiv.org/abs/2410.13070
+      16. NeuSym-RAG: Hybrid Neural Symbolic Retrieval with Multiview Structuring for PDF Question Answering - arXiv, accessed June 16, 2025, https://arxiv.org/html/2505.19754v1
+      17. Multimodal RAG for PDFs with Text, Images, and Charts | Pathway, accessed June 16, 2025, https://pathway.com/developers/templates/rag/multimodal-rag/
+      18. Document loaders | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/integrations/document_loaders/
+      19. genieincodebottle/parsemypdf: Collection of PDF parsing ... - GitHub, accessed June 16, 2025, https://github.com/genieincodebottle/parsemypdf
+      20. PyMuPDFLoader | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/integrations/document_loaders/pymupdf/
+      21. Advanced PDF parsing for RAG - KX, accessed June 16, 2025, https://kx.com/blog/advanced-pdf-parsing-for-rag/
+      22. RAG for Pdf with tables : r/LangChain - Reddit, accessed June 16, 2025, https://www.reddit.com/r/LangChain/comments/18xp9xi/rag_for_pdf_with_tables/
+      23. Building RAG on Tables and Texts Using LANGCHAIN & UNSTRUCTURED | Financial Chatbots - YouTube, accessed June 16, 2025, https://www.youtube.com/watch?v=O3c1MDCdKZE
+      24. 15 Chunking Techniques to Build Exceptional RAGs Systems - Analytics Vidhya, accessed June 16, 2025, https://www.analyticsvidhya.com/blog/2024/10/chunking-techniques-to-build-exceptional-rag-systems/
+      25. Optimizing Semantic Search by Managing Multiple Vectors - Qdrant, accessed June 16, 2025, https://qdrant.tech/articles/storing-multiple-vectors-per-object-in-qdrant/
+      26. langchain_community.document_loaders.pdf.PyPDFLoader — LangChain 0.2.17, accessed June 16, 2025, https://api.python.langchain.com/en/latest/document_loaders/langchain_community.document_loaders.pdf.PyPDFLoader.html
+      27. Simplify RAG Development with Unstructured and Qdrant, accessed June 16, 2025, https://unstructured.io/blog/streamlining-rag-pipeline-development-qdrant-integration-in-the-unstructured-platform
+      28. Hybrid Search - ️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/how_to/hybrid/
+      29. Supabase Hybrid Search - LangChain.js, accessed June 16, 2025, https://js.langchain.com/docs/integrations/retrievers/supabase-hybrid/
+      30. Reranking in Hybrid Search - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/advanced-tutorials/reranking-hybrid-search/
+      31. Introducing Contextual Retrieval - Anthropic, accessed June 16, 2025, https://www.anthropic.com/news/contextual-retrieval
+      32. How to combine results from multiple retrievers | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/how_to/ensemble_retriever/
+      33. Qdrant - ️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/integrations/vectorstores/qdrant/
+      34. TF-IDF and BM25 for RAG— a complete guide - AI Bites, accessed June 16, 2025, https://www.ai-bites.net/tf-idf-and-bm25-for-rag-a-complete-guide/
+      35. Qdrant Hybrid Search - LlamaIndex, accessed June 16, 2025, https://docs.llamaindex.ai/en/stable/examples/vector_stores/qdrant_hybrid/
+      36. Langchain - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/frameworks/langchain/
+      37. DynamicRAG: Leveraging Outputs of Large Language Model as Feedback for Dynamic Reranking in Retrieval-Augmented Generation - arXiv, accessed June 16, 2025, https://arxiv.org/html/2505.07233v1
+      38. Reranking in Semantic Search - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/search-precision/reranking-semantic-search/
+      39. Improve RAG performance using Cohere Rerank | AWS Machine Learning Blog, accessed June 16, 2025, https://aws.amazon.com/blogs/machine-learning/improve-rag-performance-using-cohere-rerank/
+      40. Rerank | Boost Enterprise Search and Retrieval - Cohere, accessed June 16, 2025, https://cohere.com/rerank
+      41. Cohere Rerank on LangChain (Integration Guide), accessed June 16, 2025, https://docs.cohere.com/v2/docs/rerank-on-langchain
+      42. CohereRerank — LangChain documentation, accessed June 16, 2025, https://api.python.langchain.com/en/latest/cohere/rerank/langchain_cohere.rerank.CohereRerank.html
+      43. Highly Accurate Retrieval for your RAG Application with ColBERT and Astra DB | DataStax, accessed June 16, 2025, https://www.datastax.com/blog/highly-accurate-retrieval-for-your-rag-application-with-colbert-and-astra-db
+      44. Advanced RAG: Increase RAG Quality with ColBERT Reranker and llamaindex, accessed June 16, 2025, https://www.pondhouse-data.com/blog/advanced-rag-colbert-reranker
+      45. Working with ColBERT - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/fastembed/fastembed-colbert/
+      46. Reranking in Hybrid Search - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/search-precision/reranking-hybrid-search/
+      47. FlashRank reranker | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/integrations/retrievers/flashrank-reranker/
+      48. RankLLM Reranker | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/integrations/document_transformers/rankllm-reranker/
+      49. ContextualCompressionRetriever - LangChain.js, accessed June 16, 2025, https://v02.api.js.langchain.com/classes/langchain.retrievers_contextual_compression.ContextualCompressionRetriever.html
+      50. Qdrant and Cohere (Integration Guide), accessed June 16, 2025, https://docs.cohere.com/v2/docs/qdrant-and-cohere
+      51. Optimizing Memory for Bulk Uploads - Qdrant, accessed June 16, 2025, https://qdrant.tech/articles/indexing-optimization/
+      52. A Developer's Friendly Guide to Qdrant Vector Database - Cohorte Projects, accessed June 16, 2025, https://www.cohorte.co/blog/a-developers-friendly-guide-to-qdrant-vector-database
+      53. Vector Search Resource Optimization Guide - Qdrant, accessed June 16, 2025, https://qdrant.tech/articles/vector-search-resource-optimization/
+      54. Optimize Performance - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/guides/optimize/
+      55. Pgvector vs. Qdrant: Open-Source Vector Database Comparison - Timescale, accessed June 16, 2025, https://www.timescale.com/blog/pgvector-vs-qdrant
+      56. qdrant-multi-node-cluster/docs/guides/performance.md at main - GitHub, accessed June 16, 2025, https://github.com/Mohitkr95/qdrant-multi-node-cluster/blob/main/docs/guides/performance.md
+      57. qdrant.tech, accessed June 16, 2025, https://qdrant.tech/documentation/guides/quantization/#:~:text=We%20recommend%20using%20binary%20quantization,quality%20in%20the%20query%20time.
+      58. Optimizing OpenAI Embeddings: Enhance Efficiency with Qdrant's Binary Quantization, accessed June 16, 2025, https://qdrant.tech/articles/binary-quantization-openai/
+      59. Capacity Planning - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/guides/capacity-planning/
+      60. Vector Search in Production - Qdrant, accessed June 16, 2025, https://qdrant.tech/articles/vector-search-production/
+      61. Payload - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/concepts/payload/
+      62. An Introduction to Vector Databases - Qdrant, accessed June 16, 2025, https://qdrant.tech/articles/what-is-a-vector-database/
+      63. Database Optimization - Qdrant, accessed June 16, 2025, https://qdrant.tech/documentation/faq/database-optimization/
+      64. Filter Qdrant retriever by metadata #16466 - GitHub, accessed June 16, 2025, https://github.com/langchain-ai/langchain/discussions/16466
+      65. Qdrant - LangChain.js, accessed June 16, 2025, https://js.langchain.com/docs/integrations/retrievers/self_query/qdrant/
+      66. qdrant-vector-db - GitHub Gist, accessed June 16, 2025, https://gist.github.com/AaradhyaSaxena/4dc701739d941e811efe8ac80eb39147
+      67. A Large-Scale Benchmark for Vietnamese Sentence Paraphrases - ACL Anthology, accessed June 16, 2025, https://aclanthology.org/2025.findings-naacl.59.pdf
+      68. arXiv:2503.07470v1 [cs.IR] 10 Mar 2025, accessed June 16, 2025, https://arxiv.org/pdf/2503.07470?
+      69. Advancing Vietnamese Information Retrieval with Learning Objective and Benchmark - arXiv, accessed June 16, 2025, https://arxiv.org/html/2503.07470v1
+      70. arXiv:2503.07470v1 [cs.IR] 10 Mar 2025, accessed June 16, 2025, https://arxiv.org/pdf/2503.07470
+      71. Advancing Vietnamese Information Retrieval with Learning Objective and Benchmark - ACL Anthology, accessed June 16, 2025, https://aclanthology.org/2024.paclic-1.5.pdf
+      72. dangvantuan/vietnamese-embedding - Hugging Face, accessed June 16, 2025, https://huggingface.co/dangvantuan/vietnamese-embedding
+      73. dangvantuan/vietnamese-document-embedding - Hugging Face, accessed June 16, 2025, https://huggingface.co/dangvantuan/vietnamese-document-embedding
+      74. Google debuts mind maps in its NotebookLM AI notebook - R&D World, accessed June 16, 2025, https://www.rdworldonline.com/google-debuts-mind-maps-in-its-notebooklm-ai-notebook/
+      75. Implementing Graph RAG Using Knowledge Graphs - IBM, accessed June 16, 2025, https://www.ibm.com/think/tutorials/knowledge-graph-rag
+      76. Constructing Knowledge Graphs From Unstructured Text Using LLMs - Neo4j, accessed June 16, 2025, https://neo4j.com/blog/developer/construct-knowledge-graphs-unstructured-text/
+      77. KGGen: Extracting Knowledge Graphs from Plain Text with Language Models - arXiv, accessed June 16, 2025, https://arxiv.org/html/2502.09956v1
+      78. Build an Extraction Chain - ️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/tutorials/extraction/
+      79. Structured Outputs from LLMs with LangChain - Opcito, accessed June 16, 2025, https://www.opcito.com/blogs/langchain-for-clean-object-based-responses-from-llmss
+      80. LangChain Structured Output - A Guide to Tools and Methods - Mirascope, accessed June 16, 2025, https://mirascope.com/blog/langchain-structured-output
+      81. Structured outputs - ️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/concepts/structured_outputs/
+      82. LangChain: Structured Outputs from LLM - Kaggle, accessed June 16, 2025, https://www.kaggle.com/code/ksmooi/langchain-structured-outputs-from-llm
+      83. How to return structured data from a model | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/how_to/structured_output/
+      84. Structured outputs - LangChain.js, accessed June 16, 2025, https://js.langchain.com/docs/concepts/structured_outputs/
+      85. PydanticOutputParser — LangChain documentation, accessed June 16, 2025, https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.pydantic.PydanticOutputParser.html
+      86. Multiple-Choice Question Generation Using Large Language Models: Methodology and Educator Insights - arXiv, accessed June 16, 2025, https://arxiv.org/pdf/2506.04851
+      87. QAGenerationChain — LangChain documentation, accessed June 16, 2025, https://python.langchain.com/api_reference/langchain/chains/langchain.chains.qa_generation.base.QAGenerationChain.html
+      88. Automatic Multiple-Choice Question Generation and Evaluation Systems Based on LLM: A Study Case With University Resolutions - ACL Anthology, accessed June 16, 2025, https://aclanthology.org/2025.coling-main.154.pdf
+      89. Can LLMs Design Good Questions Based on Context? - arXiv, accessed June 16, 2025, https://arxiv.org/html/2501.03491v1
+      90. How to use output parsers to parse an LLM response into structured format - ️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/how_to/output_parser_structured/
+      91. langchain.output_parsers.structured.StructuredOutputParser, accessed June 16, 2025, https://api.python.langchain.com/en/latest/output_parsers/langchain.output_parsers.structured.StructuredOutputParser.html
+      92. langchain.output_parsers.boolean.BooleanOutputParser, accessed June 16, 2025, https://api.python.langchain.com/en/latest/output_parsers/langchain.output_parsers.boolean.BooleanOutputParser.html
+      93. LLM Evaluation: how to measure the quality of LLMs, prompts, and outputs - Codesmith, accessed June 16, 2025, https://www.codesmith.io/blog/an-introduction-to-llm-evaluation-how-to-measure-the-quality-of-llms-prompts-and-outputs
+      94. LLM Evaluation Metrics: The Ultimate LLM Evaluation Guide - Confident AI, accessed June 16, 2025, https://www.confident-ai.com/blog/llm-evaluation-metrics-everything-you-need-for-llm-evaluation
+      95. Single- vs. Dual-Prompt Dialogue Generation with LLMs for Job Interviews in Human Resources - arXiv, accessed June 16, 2025, https://arxiv.org/html/2502.18650v1
+      96. Self-Verification Prompting: Enhancing LLM Accuracy in Reasoning Tasks, accessed June 16, 2025, https://learnprompting.org/docs/advanced/self_criticism/self_verification
+      97. The Geometry of Truth: Emergent Linear Structure in LLM Representations of True/False Datasets - arXiv, accessed June 16, 2025, https://arxiv.org/html/2310.06824v3
+      98. Evaluation | 🦜️ LangChain, accessed June 16, 2025, https://python.langchain.com/docs/concepts/evaluation/
+      99. How to make an AI Podcast using AI Voices and LLMs - Hugging Face, accessed June 16, 2025, https://huggingface.co/blog/LE15l/make-ai-podcast-using-ai-voices-and-llms
+      100. Build an AI Podcast Generator with Murf API & GPT – Step-by-Step Guide, accessed June 16, 2025, https://murf.ai/blog/build-an-ai-podcast-generator
+      101. 26 prompting tricks to improve LLMs - SuperAnnotate, accessed June 16, 2025, https://www.superannotate.com/blog/llm-prompting-tricks
+      102. Prompt Engineering: A Practical Example - Real Python, accessed June 16, 2025, https://realpython.com/practical-prompt-engineering/
+      103. Synthetic Text and Dialogues for LLM Fine-Tuning - FlexiBench, accessed June 16, 2025, https://www.flexibench.io/blog/synthetic-text-and-dialogues-for-llm-fine-tuning
+      104. How does LangChain handle text-to-speech generation? - Milvus Blog, accessed June 16, 2025, https://blog.milvus.io/ai-quick-reference/how-does-langchain-handle-texttospeech-generation
+      105. Building a Text-to-Speech(TTS) Application Using OpenAI and LangChain, accessed June 16, 2025, https://telestreak.com/tech/ai/building-a-text-to-speechtts-application-openai-langchain/?utm_source=rss&utm_medium=rss&utm_campaign=building-a-text-to-speechtts-application-openai-langchain
+      106. Best Vietnamese Text to Speech AI Voices - Fliki, accessed June 16, 2025, https://fliki.ai/voices/vietnamese
+      107. Recommendation for good TTS for Asian language - Open Forum, accessed June 16, 2025, https://forum.lingq.com/t/recommendation-for-good-tts-for-asian-language/991944
+      108. Best Vietnamese Text to Speech API - PlayHT, accessed June 16, 2025, https://play.ht/text-to-speech-api/vietnamese/
+      109. Vietnamese Text To Speech: Vietnamese AI Voice Generator - PlayHT, accessed June 16, 2025, https://play.ht/text-to-speech/vietnamese/
+      110. Vietnamese Text to Speech — Free & Online - Kapwing, accessed June 16, 2025, https://www.kapwing.com/tools/text-to-speech/vietnamese
+      111. Languages in Amazon Polly, accessed June 16, 2025, https://docs.aws.amazon.com/polly/latest/dg/supported-languages.html
+      112. What Is Amazon Polly? - Amazon Polly - AWS Documentation, accessed June 16, 2025, https://docs.aws.amazon.com/polly/latest/dg/what-is.html
+      113. Convert Text To Speech On FPT.AI Voice Maker's New Interface, accessed June 16, 2025, https://fpt.ai/blogs/how-convert-text-speech-using-new-interface-fptai-voice-maker/
+      114. FPT.AI Text to Speech | Chuyển văn bản thành giọng nói tiếng Việt - FPT Cloud, accessed June 16, 2025, https://fptcloud.com/en/product/fpt-ai-text-to-speech-en/
+      115. What is a Text-to-Speech API? - Viettel AI, accessed June 16, 2025, https://viettelai.vn/en/tin-tuc/api-chuyen-van-ban-thanh-giong-noi
+      116. Text to speech - Viettel AI, accessed June 16, 2025, https://viettelai.vn/en/chuyen-giong-noi
+      117. AI Podcast Maker LLM-TTS PODLM - App Store, accessed June 16, 2025, https://apps.apple.com/us/app/ai-podcast-maker-llm-tts-podlm/id6737045700

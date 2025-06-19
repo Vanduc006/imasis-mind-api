@@ -1,16 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 // import { v2 as cloudinary } from 'cloudinary'; 
 import { GetObjectCommand, S3Client, GetObjectCommandInput } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ENV } from 'config/env';
+import { InjectQueue } from '@nestjs/bull';
+import { Queue } from 'bull';
+
 @Injectable()
 
 export class UploadService { 
     private readonly s3:S3Client
     private readonly bucketname = "mind-aws3-bucket"
 
-    constructor() {
+    constructor(@InjectQueue('uploadQueue') private uploadQueue : Queue) {
       this.s3 = new S3Client({
         region : "ap-southeast-2",
         credentials: {
@@ -41,5 +44,9 @@ export class UploadService {
         // ]
       })
       return url
+    }
+
+    async enqueueParseJob(data: { key: string; spaceID: string; size: number }) {
+      await this.uploadQueue.add('parsePDF', data);
     }
 }
