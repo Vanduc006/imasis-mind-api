@@ -12,16 +12,17 @@ import { ENV } from 'config/env';
         host: 'alive-feline-50760.upstash.io',
         port: 6379,
         password: ENV.REDIS_KEY,
-        tls: {}, // ⚠️ bắt buộc khi dùng Upstash (SSL)
+        tls: {}, 
+        retryStrategy: () => null,
       },
     }),
     BullModule.registerQueue({
-      name: 'uploadQueue', // ✅ TÊN CHÍNH XÁC
+      name: 'uploadQueue',
     }),
     LlmModule,
   ],
   providers: [UploadService, UploadProcessor],
-  exports: [UploadService], // ✅ nếu cần dùng ở AppModule hoặc nơi khác
+  exports: [UploadService],
 })
 export class UploadModule {}
 
