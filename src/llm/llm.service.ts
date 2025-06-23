@@ -224,6 +224,7 @@ export class LlmService {
       spaceID? : string,
       fileID? : string,
       size? : string,
+      originaName? : string,
       // originalName : string
     }) {
       await this.llmQueue.add('embeddingPDF', data)
