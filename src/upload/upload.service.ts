@@ -28,6 +28,7 @@ export class UploadService {
         Bucket: this.bucketname,
         Key: key,
         ResponseContentDisposition: "inline",
+        ResponseContentType: "application/pdf",
       }
       const command = new GetObjectCommand(params)
       const url = await getSignedUrl(this.s3, command, {expiresIn: exprise})
