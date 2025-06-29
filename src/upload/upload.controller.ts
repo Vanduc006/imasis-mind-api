@@ -37,7 +37,7 @@ export class UploadController {
             spaceID : parseData.spaceID,
             fileID : parseData.fileID,
             size : parseData.size,
-            originaName : parseData.originalName
+            originalName : parseData.originalName,
         })
         return({
             timeout: parseData.timeout,

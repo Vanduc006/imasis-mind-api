@@ -16,6 +16,24 @@ export class LlmController {
         private readonly TransformfileService : TransformfileService,
         private readonly DatabaseService : DatabaseService,
     ) {}
+
+    // @Post('embeddingPrompt')
+    // async createEmbeddingPrompt(
+    //   @Body('userID') userID : string,
+    //   @Body('collectionName') collectionName : string,
+    //   @Body('spaceID') spaceID : string,
+    //   @Body('message') message : string,
+    //   @Body('model') model : string,
+    // ) {
+    //   // call queue job
+    //   await this.LlmService.enqueueLLMWithPrompt({
+    //     userID : userID,
+    //     collectionName : collectionName,
+    //     spaceID : spaceID,
+    //     message : message,
+    //     model : undefined,
+    //   })
+    // }
     
     @Post('embeddingPDF') 
     @UseInterceptors(
@@ -107,32 +125,32 @@ export class LlmController {
     // }
 
 
-    @Post('embeddingPrompt')
-    async createEmbeddingPrompt(
-      // @Body('messageid') messageid : string,
-      @Body('prompt') prompt: string,
-      @Body('userID') userID: string,
-      @Body('collectionName') collectionName: string,
-      @Body('spaceID') spaceID: string,
-      // @Body('fileID') fileID: string
-    ) {
-      const newID = await this.DatabaseService.createID()
-      const newMessage = await this.DatabaseService.newMessage(newID,prompt,userID,spaceID)
-      const moderation = await this.LlmService.moderationGPT(prompt)
-      // if ( moderation.results[0].flagged == true ) {
-      await this.DatabaseService.updateMessage(newID,spaceID,{moderation : `${moderation.results[0].flagged}`})
-      // }
-      const embedding = await this.LlmService.geminiChunkEmbedding(prompt)
-      const query = await this.LlmService.queryEmbedding(embedding,userID,spaceID,collectionName)
-      return({
-        messageid : newID,
-        adding_status : newMessage,
-        prompt : prompt,
-        // embedding: embedding,
-        query: query,
-        moderation : moderation.results[0].flagged,
-      })
-    }
+      @Post('embeddingPrompt')
+      async createEmbeddingPrompt(
+        // @Body('messageid') messageid : string,
+        @Body('message') prompt: string,
+        @Body('userID') userID: string,
+        @Body('collectionName') collectionName: string,
+        @Body('spaceID') spaceID: string,
+        // @Body('fileID') fileID: string
+      ) {
+        const newID = await this.DatabaseService.createID()
+        const newMessage = await this.DatabaseService.newMessage(newID,prompt,userID,spaceID)
+        const moderation = await this.LlmService.moderationGPT(prompt)
+        // if ( moderation.results[0].flagged == true ) {
+        await this.DatabaseService.updateMessage(newID,spaceID,{moderation : `${moderation.results[0].flagged}`})
+        // }
+        const embedding = await this.LlmService.geminiChunkEmbedding(prompt)
+        const query = await this.LlmService.queryEmbedding(embedding,userID,spaceID,collectionName)
+        return({
+          messageid : newID,
+          adding_status : newMessage,
+          prompt : prompt,
+          // embedding: embedding,
+          query: query,
+          moderation : moderation.results[0].flagged,
+        })
+      }
 
 
 

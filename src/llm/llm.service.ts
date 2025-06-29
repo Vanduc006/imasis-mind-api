@@ -224,9 +224,20 @@ export class LlmService {
       spaceID? : string,
       fileID? : string,
       size? : string,
-      originaName? : string,
+      originalName? : string,
       // originalName : string
     }) {
       await this.llmQueue.add('embeddingPDF', data)
+    }
+
+    async enqueueLLMWithPrompt(data : {
+      userID? : string,
+      collectionName? : string,
+      spaceID? : string,
+      message? : string,
+      model? : string,
+
+    }) {
+      await this.llmQueue.add('embeddingPrompt',data)
     }
 }

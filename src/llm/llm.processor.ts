@@ -28,14 +28,16 @@ export class LLMProcessor implements OnApplicationShutdown {
       spaceID,
       fileID,
       size,
+      originalName,
     } = job.data;
 
     this.logger.log(`➡️ [embeddingPDF] Job ${job.id} started for fileID=${fileID}, spaceID=${spaceID}`);
 
     try {
       // Step 1: Insert to DB
-      await this.DatabaseService.newObject(spaceID, 'pdf', fileID, file.originalName, size);
-      this.logger.log(`📦 Object inserted: ${file.originalName}`);
+      await this.DatabaseService.newObject(spaceID, 'pdf', fileID, originalName, size);
+      // Loi insert vao database - Done
+      this.logger.log(`📦 Object inserted: ${originalName}`);
 
       // Step 2: Parse PDF
       const extract = await this.TransformfileService.PrasePDF(file);
@@ -54,7 +56,7 @@ export class LLMProcessor implements OnApplicationShutdown {
       this.logger.log(`🧠 Embeddings generated`);
 
       // Step 6: Store vectors
-      await this.LlmService.storeEmbedding(chunks, embedding, userID, collectionName, spaceID, file.originalName);
+      await this.LlmService.storeEmbedding(chunks, embedding, userID, collectionName, spaceID, originalName);
       this.logger.log(`📊 Embeddings stored successfully`);
     } catch (error) {
       this.logger.error(`❌ Job ${job.id} failed: ${error.message}`, error.stack);
@@ -66,4 +68,36 @@ export class LLMProcessor implements OnApplicationShutdown {
     await this.queue.close(); // ensure connection is closed cleanly
     this.logger.log('✅ Redis connection closed for llmQueue.');
   }
+
+  @Process('embeddingPrompt')
+  async handleEmbeddingPrompt(job : Job) {
+    const {
+      userID,
+      collectionName,
+      spaceID,
+      message,
+      model
+    } = job.data
+    try {
+      //Step 1: Granht new ID for message
+      const newID = await this.DatabaseService.createID()
+      // Step 2: Insert to database
+      await this.DatabaseService.newMessage(newID,message,userID,spaceID)
+      // Step 3 : Moderation
+      const moderation = await this.LlmService.moderationGPT(message)
+      // Step 4 : Update moderation and continue or not
+      await this.DatabaseService.updateMessage(newID,spaceID,{
+        moderation : `${moderation.results[0].flagged}`
+      })
+      // If true return, if false next step
+      if (!moderation.results[0].flagged) {
+      // Step 5 : Embedding prompt
+        const embedding = await this.LlmService.geminiChunkEmbedding(message)
+        await this.LlmService.queryEmbedding(embedding,userID,spaceID,collectionName)
+      }
+    } catch (error) {
+      this.logger.log(`➡️ [embeddingPDF] Job ${job.id}, spaceID=${spaceID}`);
+    }
+  }
+
 }
