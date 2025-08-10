@@ -211,7 +211,7 @@ export class LlmService {
 
     async moderationGPT(content : string) {
         const moderation = await this.clientGPT.moderations.create({
-            model: "omni-moderation-2024-09-26",
+            model: "omni-moderation-latest",
             input: content,
         })
         return moderation
